@@ -1,10 +1,12 @@
 
 const R = {
   renderer: null, scene: null, cam: null, canvas: null,
-  dw: 2, dh: 2, iw: 2, ih: 2, maxIH: 620, maxPix: 690000, quality: 1, cssW: 2, cssH: 2, safe: [0, 0, 0, 0], lite: 0, opt: !HASH.noopt,
+  dw: 2, dh: 2, iw: 2, ih: 2, iw0: 2, ih0: 2, zres: 1, maxIH: 620, maxPix: 690000, quality: 1, cssW: 2, cssH: 2, safe: [0, 0, 0, 0], lite: 0, opt: !HASH.noopt,
   viewH: 27, fitW: 45, fitTall: 33, shiftY: 0, px: 0.04,
   sub: new THREE.Vector2(), ditherOfs: new THREE.Vector2(),
   focusZ: 60, fade: 0, exposure: 1.0,
+  bright: HASH.bright !== undefined && isFinite(+HASH.bright) ? +HASH.bright : 1.45,
+  ambBoost: HASH.amb !== undefined && isFinite(+HASH.amb) ? +HASH.amb : 1.6,
   rt: {}, mats: {}, fsScene: null, fsCam: null, fsMesh: null,
   NL: 12, lightPos: [], lightCol: [],
 };
@@ -162,7 +164,7 @@ void main(){
   gl_FragColor = vec4(c, 1.0);
 }`, {
     tColor: { value: null }, tBloomA: { value: null }, tBloomB: { value: null },
-    uGrade: { value: new THREE.Vector4(1.0, 0.92, 0.55, 1.0) }, uBloom: { value: new THREE.Vector3(0.35, 0.5, 28) },
+    uGrade: { value: new THREE.Vector4(1.0, 0.92, 0.38, 1.0) }, uBloom: { value: new THREE.Vector3(0.35, 0.5, 28) },
     uLift: { value: new THREE.Vector3(0.010, 0.016, 0.030) }, uDither: { value: R.ditherOfs }, uRes: { value: new THREE.Vector2() },
   });
 
@@ -187,11 +189,22 @@ function resizeRenderer() {
   R.dw = dw; R.dh = dh; R.dpr = dpr; R.cssW = dw / dpr; R.cssH = dh / dpr;
   { const el = document.getElementById('safe'), cs = el ? getComputedStyle(el) : null, v = k => cs ? Math.round((parseFloat(cs[k]) || 0) * dpr) : 0; R.safe = [v('paddingLeft'), v('paddingTop'), v('paddingRight'), v('paddingBottom')]; }
   R.renderer.setSize(dw, dh, false);
+  const hud = document.getElementById('hud'); hud.width = dw; hud.height = dh;
+  resizeTargets();
+}
+
+// 内部渲染目标尺寸。R.zres 是视距补偿系数：镜头拉远时按比例提高内部分辨率，
+// 让每个内部像素对应的世界尺寸保持不变，画面精细度不随视距变化。
+function resizeTargets() {
+  const dw = R.dw, dh = R.dh;
   const texel = Math.max(2, Math.sqrt(dw * dh / R.maxPix), Math.min(dw, dh) / R.maxIH);
   let ih = Math.round(dh / texel * R.quality);
   ih = Math.max(ih, Math.min(dh, 240));
   let iw = Math.max(8, Math.round(dw * ih / dh));
   if (iw > 1500) { ih = Math.round(ih * 1500 / iw); iw = 1500; }
+  R.iw0 = iw; R.ih0 = ih;
+  const zf = R.zres || 1;
+  if (zf > 1) { ih = Math.min(dh, Math.round(ih * zf)); iw = Math.max(8, Math.round(dw * ih / dh)); }
   R.iw = iw; R.ih = ih;
   for (const k in R.rt) { R.rt[k].dispose(); if (R.rt[k].depthTexture) R.rt[k].depthTexture.dispose(); }
   const mk = (w, h, type, filter, depth) => {
@@ -207,7 +220,6 @@ function resizeRenderer() {
   R.rt.bA = mk(bw, bh, HF, LI, false); R.rt.bA2 = mk(bw, bh, HF, LI, false);
   R.rt.bB = mk(cw, ch, HF, LI, false); R.rt.bB2 = mk(cw, ch, HF, LI, false);
   R.rt.final = mk(iw, ih, THREE.UnsignedByteType, LI, false);
-  const hud = document.getElementById('hud'); hud.width = dw; hud.height = dh;
 }
 
 function fsPass(mat, target) {
@@ -231,7 +243,7 @@ function renderFrame() {
   u = M.dof.uniforms; u.tColor.value = T.atmo.texture; u.tDepth.value = T.scene.depthTexture; u.uPx.value.copy(px);
   const zr = cam.far - cam.near;
   const dsc = R.dofScale || 1;
-  u.uDof.value.set((R.focusZ - cam.near) / zr, 3.2 * dsc / zr, 11.5 * dsc / zr, HASH.nodof || R.lite ? 0.6 : Math.max(2, Math.min(R.ih, R.iw * 1.6) * 0.0145));
+  u.uDof.value.set((R.focusZ - cam.near) / zr, 3.2 * dsc / zr, 11.5 * dsc / zr, HASH.nodof || R.lite ? 0.6 : Math.max(2, Math.min(R.ih0, R.iw0 * 1.6) * 0.0145));
   const nd = R.dofD || 20;
   u.uNear.value.set(Math.max(4 * dsc, 0.55 * nd) / zr, Math.max(6, nd) / zr, 0.6, R.opt ? 0.25 : -1);
   fsPass(M.dof, T.dof);
@@ -244,7 +256,7 @@ function renderFrame() {
   u.tColor.value = T.bB.texture; u.uDir.value.set(1.6 / T.bB.width, 0); fsPass(M.blur, T.bB2);
   u.tColor.value = T.bB2.texture; u.uDir.value.set(0, 1.6 / T.bB.height); fsPass(M.blur, T.bB);
   u = M.comp.uniforms; u.tColor.value = T.dof.texture; u.tBloomA.value = T.bA.texture; u.tBloomB.value = T.bB.texture;
-  u.uGrade.value.x = R.exposure; u.uGrade.value.w = R.fade; u.uRes.value.set(R.iw, R.ih);
+  u.uGrade.value.x = R.exposure * R.bright; u.uGrade.value.w = R.fade; u.uRes.value.set(R.iw, R.ih);
   fsPass(M.comp, T.final);
   u = M.up.uniforms; u.tColor.value = T.final.texture; u.uTex.value.set(R.iw, R.ih); u.uOut.value.set(R.dw, R.dh); u.uSeed.value = (SH.uTime.value * 60 % 1000) * 7.13;
   fsPass(M.up, null);

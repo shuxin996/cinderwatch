@@ -4,52 +4,55 @@ Object.assign(G, {
   queue: [], waveT: 0, nextIn: 0, spawning: false, bossWave: false, bossAlive: false, k: 0, phaseT: 0, banner: null, started: false, timeScale: 1, trickle: 0, clearT: 0, paused: false, speed: 1, best: 0, seen: {},
 });
 
-function waveNumber() { return G.level * 5 + (G.phase === 'rise' ? 1 : Math.max(1, G.k)); }
+const WPL = 8, ELITE_K = 4, WAVE_GAP = 15, PREP_T = 25;
+function waveNumber() { return G.level * WPL + (G.phase === 'rise' ? 1 : Math.max(1, G.k)); }
 const ROSTER = {
   skel: [4, 3, 6, .5, 1, 5], rat: [1.7, 5, 9, .2, 2, 3], bat: [4.2, 3, 5, .35, 2, 1.3], ghoul: [5.5, 2, 4, .4, 2, 2],
   slime: [9.5, 1, 3, .9, 3, 2], spider: [3, 3, 6, .25, 3, 2], scarab: [1.9, 5, 8, .18, 2, 0], knight: [12.5, 1, 3, .5, 4, 2], wolf: [5.5, 2, 4, .35, 4, 1.6], bomber: [6, 1, 2, .8, 4, 1.2],
   wraith: [9, 1, 3, .7, 5, 1.4], toad: [8, 1, 3, .7, 5, .7], wisp: [2.6, 4, 7, .22, 5, .8], drummer: [13, 1, 1, 1, 6, .9], gargoyle: [11, 1, 3, .6, 6, .9],
   necro: [18, 1, 1, 1.2, 7, .9], mummy: [15, 1, 2, .9, 7, .9], brute: [32, 1, 1, 2, 8, .7], golem: [40, 1, 1, 2, 8, .7], brood: [30, 1, 1, 2, 9, .6],
+  thief: [7, 1, 3, .5, 3, 1.1], fireel: [9, 1, 3, .6, 4, 1.1], iceel: [10, 1, 3, .6, 5, 1], shieldskel: [14, 1, 2, .8, 5, 1], priest: [15, 1, 1, 1, 6, .9], vampire: [14, 1, 2, .9, 6, .8], ram: [28, 1, 1, 1.6, 8, .7], arcgolem: [34, 1, 1, 2, 9, .6],
 };
 function waveMenu(k, level) {
-  const w = level * 5 + k, bio = G.B.bio, menu = [];
+  const w = (level * WPL + k) * 5 / WPL, bio = G.B.bio, menu = [];
   for (const ty in ROSTER) {
     const r = ROSTER[ty], mul = bio.mobs[ty] === undefined ? 1 : bio.mobs[ty], un = Math.min(r[4], bio.early[ty] || 99), wt = r[5] ? r[5] * mul : (bio.mobs[ty] || 0);
-    if (w >= un && wt > 0) menu.push([ty, wt * (w === un && w > 1 ? 2.2 : 1)]);
+    if (w >= un && wt > 0) menu.push([ty, wt * (w - un < 5 / WPL && w > 1 ? 2.2 : 1)]);
   }
   return menu;
 }
 function bossType() { const b = G.B.bio.boss; return b[Math.floor(G.level / BIOMES.length) % b.length]; }
 function buildWave(k, level) {
-  const q = [], boss = k === 5, lv = 1 + .25 * level;
-  let budget = (34 + 25 * (k - 1)) * lv * G.press * (boss ? .7 : 1), heavy = 0, air = budget * .42;
-  const hpMul = (1 + .13 * (k - 1)) * (1 + .27 * level) * (.85 + .15 * G.press);
+  const q = [], boss = k === WPL, lv = 1 + .25 * level, ke = 1 + (k - 1) * 4 / (WPL - 1);
+  let budget = (34 + 25 * (ke - 1)) * lv * G.press * (boss ? .7 : 1), heavy = 0, air = budget * .42;
+  const hpMul = (1 + .13 * (ke - 1)) * (1 + .27 * level) * (.85 + .15 * G.press);
   const menu = waveMenu(k, level), tot = menu.reduce((a, b) => a + b[1], 0);
   let t = .6;
   if (boss) q.push({ t: 2.2, type: bossType(), hpMul: (1 + .4 * level) * Math.pow(G.press, .4) });
+  if (k === ELITE_K) { const hv = menu.filter(e => ROSTER[e[0]][0] >= 9 && ROSTER[e[0]][0] < 30 && !MON[e[0]].fly); if (hv.length) for (let i = 0; i < 2 + level; i++) { q.push({ t: 2 + i * 2.6, type: hv[Math.floor(rnd() * hv.length)][0], hpMul: hpMul * 1.7, elite: true }); budget -= 14; } }
   while (budget > 0) {
     let r = rnd() * tot, type = 'skel'; for (const [ty, w] of menu) { r -= w; if (r <= 0) { type = ty; break; } }
     let R = ROSTER[type];
     if (R[0] > budget + 5 || (R[0] >= 30 && heavy >= 1 + (level >> 1)) || (MON[type].fly && air <= 0)) { type = 'skel'; R = ROSTER.skel; }
     if (R[0] >= 30) heavy++;
-    const n = Math.floor(rr(R[1], R[2] + .999)), gap = R[3];
+    const n = Math.floor(rr(R[1], R[2] + .999)), gap = R[3] * 1.35;
     for (let i = 0; i < n && budget > 0; i++) { q.push({ t, type, hpMul }); t += gap * rr(.8, 1.25); budget -= R[0]; if (MON[type].fly) air -= R[0]; }
-    t += rr(1.1, 2.3) * (boss ? 1.5 : 1);
+    t += rr(1.6, 3.0) * (boss ? 1.5 : 1);
   }
   q.sort((a, b) => a.t - b.t);
   return q;
 }
 function startWave() {
-  G.k = G.k % 5 + 1; G.queue = buildWave(G.k, G.level); if (waveNumber() > G.best) { G.best = waveNumber(); try { localStorage.setItem('cinderwatch.best', '' + G.best); } catch (e) {} } G.waveT = 0; G.spawning = true; G.bossWave = G.k === 5; G.waveKills = 0; G.waveLeaks = 0; G.bossDown = false; G.trickle = 6; G.trickleN = 0;
+  G.k = G.k % WPL + 1; G.queue = G.nextQueue || buildWave(G.k, G.level); G.nextQueue = null; if (waveNumber() > G.best) { G.best = waveNumber(); try { localStorage.setItem('cinderwatch.best', '' + G.best); } catch (e) {} } G.waveT = 0; G.spawning = true; G.bossWave = G.k === WPL; G.waveKills = 0; G.waveLeaks = 0; G.bossDown = false; G.trickle = 6; G.trickleN = 0;
   sfx(G.bossWave ? 'hornBoss' : 'horn', G.B.cave.x, G.B.cave.z, 1.1);
-  UI.banner(G.bossWave ? '第 ' + waveNumber() + ' 波 · ' + MON[bossType()].name : '第 ' + waveNumber() + ' 波', G.bossWave ? 3.6 : 2.2, G.bossWave);
+  UI.banner(G.bossWave ? '第 ' + waveNumber() + ' 波 · ' + MON[bossType()].name : '第 ' + waveNumber() + ' 波' + (G.k === ELITE_K ? ' · 精英来袭' : ''), G.bossWave ? 3.6 : 2.2, G.bossWave);
 }
 function endWave() {
   const l = G.waveLeaks;
   if (l === 0) G.press *= 1.17; else if (l >= 6) G.press *= .8; else if (l >= 3) G.press *= .9;
   if (G.lives <= 6) G.press *= .9;
   G.press = clamp(G.press, .6, 2.2);
-  G.gold += 24 + 9 * G.k + 10 * G.level;
+  G.gold += 20 + 6 * G.k + 10 * G.level;
 }
 function updateWaves(dt) {
   if (G.phase !== 'play') return;
@@ -58,14 +61,14 @@ function updateWaves(dt) {
     G.waveT += dt;
     while (G.queue.length && G.queue[0].t <= G.waveT) {
       if (G.mons.length > 84) break;
-      const e = G.queue.shift(); spawnMonster(e.type, { hpMul: e.hpMul });
+      const e = G.queue.shift(); spawnMonster(e.type, { hpMul: e.hpMul, elite: e.elite });
     }
     if (!G.queue.length) {
       G.bossAlive = G.mons.some(m => m.def.boss && !m.dead);
       if (G.bossWave && G.bossAlive) {
         G.trickle -= dt;
-        if (G.trickle <= 0 && G.trickleN < 9) { G.trickleN++; G.trickle = rr(3.2, 4.6); const tm = waveMenu(5, G.level).filter(e => ROSTER[e[0]][0] < 13), ty = tm[Math.floor(rnd() * tm.length)][0], n = Math.max(1, Math.min(5, Math.round(8 / ROSTER[ty][0]))), hpMul = (1 + .5) * (1 + .22 * G.level); for (let i = 0; i < n; i++) G.queue.push({ t: G.waveT + i * .4, type: ty, hpMul }); }
-      } else { G.spawning = false; endWave(); G.nextIn = G.bossWave ? -1 : 6.5; G.clearT = 0; }
+        if (G.trickle <= 0 && G.trickleN < 9) { G.trickleN++; G.trickle = rr(3.2, 4.6); const tm = waveMenu(WPL, G.level).filter(e => ROSTER[e[0]][0] < 13), ty = tm[Math.floor(rnd() * tm.length)][0], n = Math.max(1, Math.min(5, Math.round(8 / ROSTER[ty][0]))), hpMul = (1 + .5) * (1 + .22 * G.level); for (let i = 0; i < n; i++) G.queue.push({ t: G.waveT + i * .4, type: ty, hpMul }); }
+      } else { G.spawning = false; endWave(); G.nextIn = G.bossWave ? -1 : WAVE_GAP; G.nextMax = WAVE_GAP; G.clearT = 0; if (!G.bossWave) G.nextQueue = buildWave(G.k % WPL + 1, G.level); }
     }
   } else if (G.bossWave) {
     G.clearT += dt;
@@ -76,7 +79,7 @@ function updateWaves(dt) {
   }
   if (G.lives <= 0 && G.phase === 'play') setPhase('defeat');
 }
-function callWaveEarly() { if (G.phase === 'play' && !G.spawning && !G.bossWave && G.nextIn > .4) { G.gold += Math.round(G.nextIn * 3); G.nextIn = .05; return true; } return false; }
+function callWaveEarly() { if (G.phase === 'play' && !G.spawning && !G.bossWave && G.nextIn > .4) { G.gold += Math.round(G.nextIn * 2); G.nextIn = .05; return true; } return false; }
 
 function padCoverage(pad, range, air) {
   const B = G.B; let c = 0; const r2 = range * range;
@@ -102,8 +105,8 @@ function aiThink(dt) {
   if (G.phase !== 'play' || UI.playerActive()) return;
   AI.think -= dt; if (AI.think > 0) return; AI.think = .5;
   const B = G.B, towers = G.towers.filter(t => t.alive), empty = B.pads.filter(p => !p.tower), N = towers.length;
-  const cnt = { archer: 0, bombard: 0, spire: 0, guard: 0 }; for (const t of towers) cnt[t.kind]++;
-  const ideal = { archer: .36, bombard: .22, spire: .2, guard: .22 };
+  const cnt = {}; for (const k of TOWER_KINDS) cnt[k] = 0; for (const t of towers) cnt[t.kind]++;
+  const ideal = { archer: .22, bombard: .15, spire: .13, guard: .15, mage: .14, frost: .1, crypt: .06, shrine: .05 };
   const lt = G.leakTypes; let air = 0, armor = 0, swarm = 0; for (const ty in lt) { const c = MON[ty].cat; if (c === 'air') air += lt[ty]; else if (c === 'armor') armor += lt[ty]; else if (c === 'swarm') swarm += lt[ty]; }
   const gatePress = sat(G.leaks / 8);
   const opts = [];
@@ -111,10 +114,12 @@ function aiThink(dt) {
     const def = TOWER[kind];
     let need = ideal[kind] * (N + 1.6) - cnt[kind] + .35;
     if (kind === 'archer') need += air * .2 + (N === 0 ? 1 : 0); if (kind === 'spire') need += air * .12 + armor * .1; if (kind === 'bombard') need += armor * .08 + swarm * .06 + (N >= 2 && cnt.bombard === 0 ? .5 : 0); if (kind === 'guard') need += swarm * .04 + (N >= 1 && cnt.guard === 0 ? .9 : 0);
+    if (kind === 'mage') need += armor * .12 + air * .05; if (kind === 'frost') need += swarm * .05; if ((kind === 'crypt' || kind === 'shrine') && N < 4) need -= .6;
     if (need <= 0) continue;
     for (const pad of empty) {
       const cov = padCoverage(pad, def.range[0]) / (def.range[0] * 2);
       let sc = need * (.55 + cov * .5);
+      if (kind === 'shrine') { let nb = 0; for (const t of towers) if (t.kind !== 'shrine' && Math.hypot(t.x - pad.x, t.z - pad.z) < def.range[0]) nb++; if (nb < 2) continue; sc = need * (.3 + nb * .25); }
       const rel = pad.s / B.L;
       if (N < 2) sc *= 1 - Math.abs(rel - .42) * .9;
       sc *= 1 + gatePress * (rel - .5) * .8;
@@ -156,7 +161,7 @@ function startCrumble() {
   const B = G.B;
   for (const m of G.mons) if (!m.dead) { shatter(e => rigMonster(e), m, [0, 1, 0], { spread: 1.2, life: 1 }); removeMonster(m); }
   for (const f of G.men) if (!f.dead) { f.weapon = KIT.item.blade; shatter(e => rigHuman(KIT.foot, SPEC.foot, e), f, [0, 1, 0], { spread: 1, life: 1 }); f.dead = f.gone = true; f.alive = false; if (f.flame) removeFlame(f.flame); }
-  G.mons.length = 0; G.men.length = 0; G.arrows.length = 0; G.shells.length = 0; G.stuck.length = 0;
+  G.mons.length = 0; G.men.length = 0; G.arrows.length = 0; G.shells.length = 0; G.stuck.length = 0; G.orbs.length = 0; G.zones.length = 0;
   for (const t of G.towers) {
     t.em.alive = false; LT.emitters[t.idx] = null; removeFlame(t.flame); removeFlame(t.flame2); t.flame = t.flame2 = null; t.archers.length = 0; t.alive = false; t.state = 'gone';
     let best = null, bd = 1e9; for (const p of B.pieces) if (p.kind === 'chunk') { const d = dist2(p.cx, p.cz, t.x, t.z); if (d < bd) { bd = d; best = p; } }
@@ -187,9 +192,10 @@ function activateBoard(B, lit) {
 }
 function beginBattle(first) {
   const B = G.B;
-  G.lives = G.maxLives; G.gold = 300 + 80 * G.level; G.bountyMul = 1 + .18 * G.level; G.dmgMul = 1.55 + .2 * G.level; G.press = lerp(G.press, 1, .5); UI.goldShown = G.gold; G.k = 0; G.leaks = 0; G.leakTypes = {}; G.spawning = false; G.bossWave = false; G.nextIn = first ? .9 : 1.6; G.queue = []; AI.think = .15; AI.wait = 0;
+  G.lives = G.maxLives; G.gold = 300 + 80 * G.level; G.bountyMul = 1 + .18 * G.level; G.dmgMul = 1.55 + .2 * G.level; G.press = lerp(G.press, 1, .5); UI.goldShown = G.gold; G.k = 0; G.leaks = 0; G.leakTypes = {}; G.spawning = false; G.bossWave = false; G.nextIn = G.nextMax = PREP_T; G.queue = []; G.nextQueue = null; AI.think = .15; AI.wait = 0;
   const n = 4 + Math.min(3, G.level);
   for (let i = 0; i < n; i++) spawnMonster(i === n - 1 && G.level > 0 ? 'knight' : 'skel', { s: B.cave.s + 2.2 + i * 1.15, lat: rr(-.7, .7), hpMul: 1 + .22 * G.level });
+  G.nextQueue = buildWave(1, G.level);
   G.phase = 'play'; G.phaseT = 0;
 }
 function updatePhase(dt) {

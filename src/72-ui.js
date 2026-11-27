@@ -25,6 +25,11 @@ const UI = (() => {
     c.fillStyle = o.bd || COLR.bd; c.fillRect(x + s, y, w - 2 * s, h); c.fillRect(x, y + s, w, h - 2 * s);
     c.fillStyle = o.bg || COLR.bg; c.fillRect(x + 2 * s, y + s, w - 4 * s, h - 2 * s); c.fillRect(x + s, y + 2 * s, w - 2 * s, h - 4 * s);
     if (o.hi) { c.fillStyle = o.hi; c.fillRect(x + 2 * s, y + s, w - 4 * s, s); }
+    if (h > 8 * s && w > 8 * s) {
+      c.fillStyle = 'rgba(255,214,150,0.045)'; c.fillRect(x + 2 * s, y + 2 * s, w - 4 * s, Math.round((h - 4 * s) * .45));
+      c.fillStyle = o.bd === COLR.bdHi || o.bd === COLR.ember ? '#ffd98a' : '#9a7a48';
+      for (const [ax, ay] of [[x + 2 * s, y + 2 * s], [x + w - 3 * s, y + 2 * s], [x + 2 * s, y + h - 3 * s], [x + w - 3 * s, y + h - 3 * s]]) c.fillRect(ax, ay, s, s);
+    }
   }
   function text(str, x, y, col, o) { return PX.text(U.ctx, str, x, y, U.s, col || COLR.tx, o); }
   const tw = str => PX.measure(str) * U.s;
@@ -88,7 +93,7 @@ const UI = (() => {
       if (PAN[e.code] && !e.ctrlKey && !e.metaKey && !e.altKey) { U.keys.add(e.code); e.preventDefault(); }
       if (e.repeat) return; audioGesture(); U.keepAwake(); U.touch = false;
       const k = e.key;
-      if (k >= '1' && k <= '4') { pickKind(TOWER_KINDS[+k - 1]); e.preventDefault(); }
+      if (k >= '1' && k <= '8') { pickKind(TOWER_KINDS[+k - 1]); e.preventDefault(); }
       else if (k === ' ' || k === 'Enter') { callWave(); e.preventDefault(); }
       else if (k === 'Escape') { U.closeMenu(); }
       else if (k === 'u' || k === 'U') { const t = (U.menu && U.menu.tower) || (U.hover && U.hover.tower); if (t) { touchInput(); doUpgrade(t); } }
@@ -257,7 +262,7 @@ const UI = (() => {
     }
     const wn = '第 ' + Math.max(1, waveNumber()) + ' 波', callable = G.phase === 'play' && !G.spawning && !G.bossWave && G.nextIn > .4;
     let sub, frac = -1;
-    if (G.phase === 'play') { if (!G.spawning && !G.bossWave && G.nextIn > 0) { sub = callable && (tch || over(U.waveRect ? U.waveRect.x : -1, U.waveRect ? U.waveRect.y : -1, U.waveRect ? U.waveRect.w : 0, U.waveRect ? U.waveRect.h : 0)) ? (tch ? '点击召唤 · +' : '立即召唤 · +') + Math.round(G.nextIn * 3) : '下一波还有 ' + Math.ceil(G.nextIn); frac = 1 - G.nextIn / 6.5; } else { const n = G.mons.length + G.queue.length; sub = n + ' 个敌人在路上'; } }
+    if (G.phase === 'play') { if (!G.spawning && !G.bossWave && G.nextIn > 0) { sub = callable && (tch || over(U.waveRect ? U.waveRect.x : -1, U.waveRect ? U.waveRect.y : -1, U.waveRect ? U.waveRect.w : 0, U.waveRect ? U.waveRect.h : 0)) ? (tch ? '点击召唤 · +' : '立即召唤 · +') + Math.round(G.nextIn * 3) : '下一波还有 ' + Math.ceil(G.nextIn); frac = 1 - G.nextIn / (G.nextMax || 15); } else { const n = G.mons.length + G.queue.length; sub = n + ' 个敌人在路上'; } }
     else sub = G.phase === 'defeat' ? '烽火已熄' : G.phase === 'clear' ? '首领已击败' : '新的关隘等待你';
     const bw = PX.iconSize('banner')[0] * s, wW = Math.max(bw + 3 * s + tw(wn), tw(sub), tw('下一波还有 0'), tw('点击召唤 · +00')) + pad * 2 + 4 * s, hW = LH * 2 + pad * 2 + s;
     const you = U.playerActive(), ct = you ? '你在指挥' : 'AI 指挥官', cs = tch ? (you ? '点击交给 AI' : '点击台座接管') : (you ? '点这里交给 AI' : '点击台座接管');
@@ -274,6 +279,18 @@ const UI = (() => {
     PX.icon(c, 'banner', tx0, yw + pad - s, s); text(wn, tx0 + bw + 3 * s, yw + pad, COLR.amber);
     text(sub, W / 2, yw + pad + LH + s, callable && (tch || hotW) ? COLR.tx : COLR.dim, { align: 'c' });
     if (frac >= 0) { c.fillStyle = '#2a2620'; c.fillRect(xw + 3 * s, yw + hW - 3 * s, wW - 6 * s, s); c.fillStyle = COLR.amber; c.fillRect(xw + 3 * s, yw + hW - 3 * s, Math.round((wW - 6 * s) * sat(frac)), s); }
+    if (G.phase === 'play' && !G.spawning && !G.bossWave && G.nextQueue && G.nextQueue.length && !U.menu) {
+      const cnt = {}; for (const e of G.nextQueue) cnt[e.type] = (cnt[e.type] || 0) + 1;
+      const ks = Object.keys(cnt).sort((a, b) => (MON[b].boss ? 99 : cnt[b]) - (MON[a].boss ? 99 : cnt[a])).slice(0, 6), nk = G.k % WPL + 1;
+      const head = '下一波' + (nk === WPL ? ' · 首领' : nk === ELITE_K ? ' · 精英' : '') + '：', rows = [];
+      for (let i = 0; i < ks.length; i += 2) rows.push(ks.slice(i, i + 2).map(k => MON[k].name + ' x' + cnt[k]).join('  '));
+      let wp = tw(head); for (const r2 of rows) wp = Math.max(wp, tw(r2)); wp += pad * 2;
+      const hp2 = LH * (rows.length + 1) + pad * 2 - s, xp = Math.round(W / 2 - wp / 2), yp = yw + hW + g3;
+      if (xp > x0 + 2 * s && xp + wp < Wr - 2 * s) {
+        c.globalAlpha = .92; plate(xp, yp, wp, hp2, { bd: nk === WPL ? COLR.ember : nk === ELITE_K ? COLR.bdHi : COLR.bd });
+        text(head, W / 2, yp + pad - s, nk === WPL ? COLR.ember : COLR.amber, { align: 'c' }); rows.forEach((r2, k) => text(r2, W / 2, yp + pad - s + (k + 1) * LH, COLR.tx, { align: 'c' })); c.globalAlpha = 1;
+      }
+    }
     const hotC = over(xc, yc, cW, hW); U.cmdRect = { id: 'cmd', x: xc, y: yc, w: cW, h: hW, hot: hotC, fn: toggleCommand, hud: true }; U.hud.push(U.cmdRect); if (hotC) U.hudHot = true;
     plate(xc, yc, cW, hW, hotC ? { bd: COLR.bdHi, bg: COLR.bg2 } : you ? { bd: COLR.bdHi } : {});
     PX.icon(c, ic, xc + pad, yc + pad - s, s); text(ct, xc + pad + icw + 3 * s, yc + pad, you ? COLR.amber : COLR.tx); text(cs, xc + pad, yc + pad + LH + s, COLR.dim);
@@ -315,7 +332,7 @@ const UI = (() => {
     } else {
       const first = U.titleT < 16, a = tch ? sat(Math.min(U.titleT - 7.2, first ? 1 : 3 - U.moved, U.manual && !first ? 0 : 1, 62 - U.titleT)) : sat(Math.min(U.titleT - 7.2, 3 - Math.min(U.moved, U.idle > 20 ? U.moved : 0) + (U.titleT < 18 ? 8 : 0)));
       if (a > .02 && !U.menu && !G.paused) {
-        const parts = tch ? ['点击台座建造', '拖动查看战场', '双指或双击缩放'] : ['点击台座建造', '1-4 选择防御塔', '空格键召唤下一波', '滚轮缩放，拖动移动视角'];
+        const parts = tch ? ['点击台座建造', '拖动查看战场', '双指或双击缩放'] : ['点击台座建造', '1-8 选择防御塔', '空格键召唤下一波', '滚轮缩放，拖动移动视角'];
         let lines = [parts.join(' · ')]; if (tw(lines[0]) + pad * 2 > boxW) { lines = parts.length > 3 ? [parts.slice(0, 2).join(' · '), parts.slice(2).join(' · ')] : parts; if (lines.some(l => tw(l) + pad * 2 > boxW)) lines = parts; }
         let w = 0; for (const l of lines) w = Math.max(w, tw(l)); w += pad * 2; const h = LH * lines.length + pad * 2 - s, hx = Math.round((iL + Wr - w) / 2), hy = yUp - h;
         if (w <= boxW) { c.globalAlpha = a; plate(hx, hy, w, h); lines.forEach((l, k) => text(l, hx + w / 2, hy + pad - s + k * LH, COLR.dim, { align: 'c' })); c.globalAlpha = 1; }
@@ -343,16 +360,16 @@ const UI = (() => {
       const place = (wP, hP) => { const below = p.y - hP - 7 * s < y0 + topH + 2 * s && p.y + 26 * s + hP < Hb - 4 * s; return [clamp(Math.round(p.x - wP / 2), 4 * s + iL, Wr - wP - 4 * s), below ? Math.round(p.y + 26 * s) : clamp(Math.round(p.y - hP - 7 * s), Math.min(y0 + topH + 4 * s, Hb - hP - 4 * s), Hb - hP - 4 * s)]; };
       c.globalAlpha = a;
       if (!m.tower) {
-        const bwid = 31 * s, bh = 35 * s, gapb = 3 * s, rowW = 4 * bwid + 3 * gapb;
-        let lit = null; const fk = U.gp.active ? TOWER_KINDS[m.focus % 4] : null;
-        const lines = k => k ? [TOWER[k].name].concat(TOWER[k].desc) : tch ? ['选择防御塔', '点选一座查看功能，', '再点一次即建造。'] : ['选择防御塔', '悬停或按 1-4', '查看各自的功能。'];
+        const bwid = 31 * s, bh = 35 * s, gapb = 3 * s, rowW = 4 * bwid + 3 * gapb, gridH = 2 * bh + gapb;
+        let lit = null; const fk = U.gp.active ? TOWER_KINDS[m.focus % TOWER_KINDS.length] : null;
+        const lines = k => k ? [TOWER[k].name].concat(TOWER[k].desc, [TOWER[k].vs || '']) : tch ? ['选择防御塔', '点选一座查看功能，', '再点一次即建造。', ''] : ['选择防御塔', '悬停或按 1-8', '查看各自的功能。', ''];
         let textW = tw('再点一次建造'); for (const k of [null].concat(TOWER_KINDS)) for (const l of lines(k)) textW = Math.max(textW, tw(l));
-        const wP = Math.max(rowW, textW) + mp * 2, hP = mp * 2 + LH + 3 * s + bh + 4 * s + LH * 3 + 2 * s + (tch ? LH + s : 0), [px, py] = place(wP, hP);
+        const wP = Math.max(rowW, textW) + mp * 2, hP = mp * 2 + LH + 3 * s + gridH + 4 * s + LH * 4 + 3 * s + (tch ? LH + s : 0), [px, py] = place(wP, hP);
         U.menuRect = { x: px, y: py, w: wP, h: hP };
         plate(px, py, wP, hP); text('在此建造', px + mp, py + mp - s, COLR.amber);
-        const bx0 = px + Math.round((wP - rowW) / 2), by = py + mp + LH + 3 * s;
+        const bx0 = px + Math.round((wP - rowW) / 2), by = py + mp + LH + 3 * s, byG = by;
         TOWER_KINDS.forEach((kind, i) => {
-          const d = TOWER[kind], can = G.gold >= d.cost[0], bx = bx0 + i * (bwid + gapb);
+          const by = byG + Math.floor(i / 4) * (bh + gapb), d = TOWER[kind], can = G.gold >= d.cost[0], bx = bx0 + (i % 4) * (bwid + gapb);
           const r = button(bx, by, bwid, bh, 'b' + kind, can, () => { if (U.touch && m.sel !== kind) { m.sel = kind; sfx('uiHover', m.pad.x, m.pad.z, .8); } else doBuild(m.pad, kind); }, kind, m.sel === kind);
           const [iw, ih] = PX.iconSize(d.icon); PX.icon(c, d.icon, bx + Math.round((bwid - iw * s) / 2), by + 6 * s + r.dy, s, can ? 1 : .45);
           if (!tch) text('' + (i + 1), bx + 3 * s, by + 2 * s + r.dy, COLR.dim);
@@ -360,14 +377,14 @@ const UI = (() => {
           PX.icon(c, 'coin', cx0, by + bh - LH - 3 * s + r.dy, s, can ? 1 : .5); text('' + d.cost[0], cx0 + 10 * s, by + bh - LH - 3 * s + r.dy, can ? COLR.amber : COLR.red);
           if (r.lit) lit = kind;
         });
-        const ls = lines(lit || fk), ty = by + bh + 4 * s;
-        text(ls[0], px + mp, ty, lit || fk ? COLR.tx : COLR.dim); text(ls[1], px + mp, ty + LH + s, COLR.dim); if (ls[2]) text(ls[2], px + mp, ty + LH * 2 + s, COLR.dim);
-        if (tch && m.sel) { const can = G.gold >= TOWER[m.sel].cost[0]; text(can ? '再点一次建造' : '金币不足', px + mp, ty + LH * 3 + 2 * s, can ? COLR.amber : COLR.red); }
+        const ls = lines(lit || fk), ty = by + gridH + 4 * s;
+        text(ls[0], px + mp, ty, lit || fk ? COLR.tx : COLR.dim); text(ls[1], px + mp, ty + LH + s, COLR.dim); if (ls[2]) text(ls[2], px + mp, ty + LH * 2 + s, COLR.dim); if (ls[3]) text(ls[3], px + mp, ty + LH * 3 + 2 * s, COLR.ok);
+        if (tch && m.sel) { const can = G.gold >= TOWER[m.sel].cost[0]; text(can ? '再点一次建造' : '金币不足', px + mp, ty + LH * 4 + 3 * s, can ? COLR.amber : COLR.red); }
       } else {
         const t = m.tower, d = t.def, maxed = t.lvl >= 2, upc = maxed ? 0 : d.cost[t.lvl + 1], can = !maxed && G.gold >= upc && t.state === 'active', refund = Math.round(t.spent * .6), L1 = t.lvl + 1;
         const ul = maxed ? '已满级' : '升级 ' + upc, sl = m.sellArm ? '确认 +' + refund : '出售 +' + refund, iw9 = 9 * s, bw3 = Math.max(tw(ul), tw(sl), tw('确认 +' + refund)) + iw9 + 11 * s, bh = (tch ? 24 : 15) * s, by0 = Math.round((bh - LH) / 2);
-        const st = t.kind === 'guard' ? d.n[t.lvl] + ' 名步兵 · ' + d.hp[t.lvl] + ' 生命' : '射程 ' + d.range[t.lvl].toFixed(1) + ' · 伤害 ' + d.dmg[t.lvl];
-        const nx = maxed ? t.kills + ' 次击杀' : (t.kind === 'guard' ? '下一级：' + d.n[L1] + ' 名步兵 · ' + d.hp[L1] + ' 生命' : '下一级：射程 ' + d.range[L1].toFixed(1) + ' · 伤害 ' + d.dmg[L1]);
+        const st = towerStat(t.kind, t.lvl) + (t.buff > 0 ? ' · 祭坛加持' : '');
+        const nx = maxed ? t.kills + ' 次击杀 · 总伤害 ' + Math.round(t.dealt) : '下一级：' + towerStat(t.kind, L1);
         const wP = Math.max(bw3 * 2 + 3 * s, tw(d.name) + 26 * s, tw(st), tw(nx)) + mp * 2, hP = mp * 2 + LH * 3 + 6 * s + bh, [px, py] = place(wP, hP);
         U.menuRect = { x: px, y: py, w: wP, h: hP };
         plate(px, py, wP, hP); text(d.name, px + mp, py + mp - s, COLR.amber);

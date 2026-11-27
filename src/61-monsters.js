@@ -27,6 +27,14 @@ const MON = {
   queen: { name: '育巢女王', tip: '持续孵化蜘蛛。', hp: 1150, spd: .85, rad: 1.1, mass: 40, bounty: 200, lives: 5, hitH: 1.0, top: 2.0, dmg: 40, atkT: 1.5, eye: [3.8, .3, .9], scale: 4.2, boss: true, summon: { type: 'spider', n: 2, every: 8, max: 99, hp: 1 }, death: 'bug', cat: 'armor', tint: [.85, .55, 1.0] },
   colossus: { name: '熔岩巨像', tip: '濒死时会加速。', hp: 1250, spd: .7, rad: 1.05, mass: 60, bounty: 200, lives: 5, hitH: 2.2, top: 4.3, dmg: 60, atkT: 2.0, eye: [4, 1.6, .3], scale: 3.0, boss: true, armor: .85, slowRes: .3, enrage: [.3, 1.25], death: 'rock', cat: 'armor', tint: [1.5, .5, .26] },
   king: { name: '埋葬之王', tip: '会召唤木乃伊与它同行。', hp: 1250, spd: .86, rad: .92, mass: 40, bounty: 200, lives: 5, hitH: 2.2, top: 4.2, dmg: 46, atkT: 1.7, eye: [.6, 3.0, 2.6], scale: 2.7, boss: true, summon: { type: 'mummy', n: 1, every: 9, max: 99, hp: .7 }, death: 'bones', blade: true, cat: 'armor', tint: [1.2, 1.0, .55] },
+  thief: { name: '暗影盗贼', tip: '漏过防线会偷走 30 金币。', hp: 30, spd: 2.2, rad: .25, mass: .8, bounty: 9, lives: 1, hitH: .7, top: 1.4, dmg: 5, atkT: .6, eye: [3.4, .4, 2.6], scale: .92, slip: true, steal: 30, death: 'bones', blade: true, cat: 'swarm', tint: [.45, .4, .6] },
+  fireel: { name: '火焰元素', tip: '免疫灼烧，冰冻对它效果翻倍。', hp: 70, spd: 1.35, rad: .3, mass: 1, bounty: 11, lives: 1, hitH: .8, top: 1.5, dmg: 10, atkT: .9, eye: [4, 2.4, .6], scale: 1, burnImm: true, fireEl: true, death: 'ghost', tint: [2.4, .9, .3] },
+  iceel: { name: '冰霜元素', tip: '免疫减速和冰冻，需要硬输出。', hp: 95, spd: 1.1, rad: .3, mass: 1.2, bounty: 12, lives: 1, hitH: .8, top: 1.5, dmg: 10, atkT: 1, eye: [.8, 2.2, 4], scale: 1.05, slowRes: 1, freezeImm: true, death: 'ghost', tint: [.6, 1.3, 2.6] },
+  shieldskel: { name: '盾墙骷髅', tip: '替附近的怪物挡下箭矢和炮弹。', hp: 110, spd: .95, rad: .32, mass: 2.4, bounty: 14, lives: 1, hitH: .8, top: 1.6, dmg: 9, atkT: 1.1, eye: [.5, 1.7, 3.4], scale: 1.1, armor: .5, ward: [2.6, .6], death: 'bones', blade: true, cat: 'armor', tint: [.8, .82, .95] },
+  priest: { name: '瘟疫祭司', tip: '持续治疗附近的怪物，优先击杀。', hp: 90, spd: .95, rad: .3, mass: 1.4, bounty: 16, lives: 1, hitH: .8, top: 1.8, dmg: 5, atkT: 1.2, eye: [1, 3.4, .8], scale: 1.05, heal: [3.2, .05], death: 'bones', tint: [.75, .95, .6] },
+  vampire: { name: '吸血鬼', tip: '飞行单位，死后化作一群蝙蝠。', hp: 80, spd: 1.7, rad: .32, mass: 1, bounty: 14, lives: 2, hitH: 0, top: .6, dmg: 0, atkT: 1, eye: [4, .5, .5], scale: 1.1, fly: true, split: ['bat', 3], death: 'bat', cat: 'air', alt: [2.6, 3.3], flap: 11, tint: [1.6, .45, .5] },
+  ram: { name: '攻城槌', tip: '冲撞路边的塔，让它瘫痪几秒。', hp: 320, spd: .75, rad: .5, mass: 9, bounty: 28, lives: 2, hitH: 1.0, top: 1.95, dmg: 20, atkT: 1.4, eye: [3.6, 1.4, .3], scale: 1.45, ram: { every: 6.5, r: 3.4, stun: 2.2 }, death: 'flesh', cat: 'armor', tint: [1.1, .8, .6] },
+  arcgolem: { name: '奥术傀儡', tip: '魔法抗性很高，法术只造成一半伤害。', hp: 420, spd: .66, rad: .5, mass: 9, bounty: 32, lives: 2, hitH: 1.1, top: 2.1, dmg: 24, atkT: 1.5, eye: [2.4, 1.2, 4], scale: 1.45, armor: .6, mres: .5, death: 'rock', cat: 'armor', tint: [.9, .7, 1.6] },
 };
 
 function spawnMonster(type, o = {}) {
@@ -36,9 +44,10 @@ function spawnMonster(type, o = {}) {
     x: 0, y: 0, z: 0, yaw: 0, ph: rnd() * 6, mv: 1, vf: def.spd, spdNow: def.spd, spdMul: rr(.93, 1.07) * (o.spdMul || 1), slowT: 0, slowF: 0,
     flash: 0, flinch: 0, atk: -1, cd: rr(.1, .5), foe: null, prog: 0, vis: false, dead: false, dying: 0, ks: 0, kl: 0, hop: rnd(), rad: def.rad * (o.radMul || 1), mass: def.mass,
     hitH: def.hitH, scale: def.scale * rr(.95, 1.05), fly: !!def.fly, torch: false, flame: null, tint: (bt && bt[type]) || def.tint || null, men: 0, struck: false, step: 0, alive: true, lI: 0, lx: 0, ly: 0, lz: 0, lseed: rnd() * 9, vx: 0, vz: 0, pop: o.pop || 0,
-    haste: 0, hitAt: -9, beat: rnd() * 6, eth: false, gT: rnd() * 4, cast: 0, sumN: 0, sumT: def.summon ? def.summon.every * rr(.45, .7) : 0, stT: def.stomp ? def.stomp.every * .6 : 0, rage: false,
+    haste: 0, hitAt: -9, beat: rnd() * 6, eth: false, gT: rnd() * 4, cast: 0, sumN: 0, sumT: def.summon ? def.summon.every * rr(.45, .7) : 0, stT: def.stomp ? def.stomp.every * .6 : def.ram ? def.ram.every * .5 : 0, frozen: 0, burnT: 0, burnD: 0, chill: 0, ward: 0, rage: false,
   };
   m.home = m.lane = m.lat;
+  if (o.elite) { m.elite = true; m.scale *= 1.15; }
   if (type === 'skel' && rnd() < .26) { m.torch = true; m.flame = addFlame({ x: 0, y: -50, z: 0, size: .36, embers: .45, glow: .8 }); m.lI = 30; }
   if (type === 'bomber') { m.torch = true; m.flame = addFlame({ x: 0, y: -50, z: 0, size: .3, embers: .7, glow: .7 }); m.lI = 26; }
   if (type === 'skel') m.tint = rnd() < .3 ? [.9, .86, .74] : null;
@@ -57,6 +66,8 @@ function hitMonster(m, dmg, kind, dx, dz, tower) {
   if (m.dead || m.hp <= 0) return false;
   if (m.eth) { if (kind === 'arrow' || kind === 'sword') { if (rnd() < .5) fxTimed(0, m.x + rr(-.2, .2), m.y + m.hitH + rr(-.2, .3), m.z + rr(-.2, .2), .5, .5, .5, .9, 1.8, .7, .18); return false; } dmg *= .5; }
   if (kind === 'arrow' && m.def.armor) { dmg *= m.def.armor; if (rnd() < .6) { fxSparks(m.x, m.y + m.hitH, m.z, 3, 3, 2.4, 2.2, 1.6, { size: .05 }); } }
+  if (m.ward && (kind === 'arrow' || kind === 'blast')) dmg *= m.ward;
+  if (m.def.mres && (kind === 'arcane' || kind === 'bolt' || kind === 'frost')) dmg *= m.def.mres;
   m.hp -= dmg; m.flash = 1; m.flinch = m.def.boss ? Math.max(m.flinch, .25) : 1; m.hitAt = G.t;
   const kb = (kind === 'blast' ? 2.6 : kind === 'sword' ? 1.3 : kind === 'arrow' ? .7 : .2) / Math.sqrt(m.mass);
   if (!m.fly && (dx || dz)) { const p = pathAt(G.B, m.s, _ap); m.ks += (dx * p.tx + dz * p.tz) * kb; m.kl += (-dx * p.tz + dz * p.tx) * kb; }
@@ -101,9 +112,10 @@ function killMonster(m, kind, dx, dz, tower) {
     for (let i = 0; i < 5; i++) fxSmoke(m.x, m.y + .3, m.z, rr(-1, 1), rr(.5, 1.5), rr(-1, 1), rr(.4, .8), .35 * sc, .5, .12, .3, .12, .5, { drag: 3 });
     sfx('squelch', m.x, m.z, .8, big ? .8 : .2);
   }
-  if (def.split && G.mons.length < 90) { const [ty, n] = def.split; for (let i = 0; i < n; i++) { const u = n > 1 ? i / (n - 1) * 2 - 1 : 0; spawnMonster(ty, { s: Math.max(.5, m.s - .15 - .1 * Math.abs(u)), lat: clamp(m.lat + u * .34, -.95, .95), hpMul: m.maxHp / def.hp, pop: 1 }).kl = u * 2.2; } }
+  if (def.split && G.mons.length < 90) { const [ty, n] = def.split; for (let i = 0; i < n; i++) { const u = n > 1 ? i / (n - 1) * 2 - 1 : 0, q = spawnMonster(ty, { s: Math.max(.5, m.s - .15 - .1 * Math.abs(u)), lat: clamp(m.lat + u * .34, -.95, .95), hpMul: m.maxHp / def.hp * (m.fly ? .6 : 1), pop: 1 }); if (q.fly) { q.x = m.x + u * .4; q.y = m.y; q.z = m.z; q.s = m.s; q.vx = rr(-2, 2); q.vz = rr(-2, 2); } else q.kl = u * 2.2; } }
+  tryRaise(m);
   if (m.torch && m.flame) fxEmbers(m.flame.x, m.flame.y, m.flame.z, 8, .15);
-  dropCoins(m.x, m.y + m.hitH * .6, m.z, Math.round(def.bounty * G.bountyMul), clamp(Math.round(def.bounty / 3), 1, 6));
+  dropCoins(m.x, m.y + m.hitH * .6, m.z, Math.round(def.bounty * G.bountyMul * (m.elite ? 2 : 1)), clamp(Math.round(def.bounty / 3), 1, 6));
   removeMonster(m);
   if (def.explode) blastAround(m, def.explode);
 }
@@ -115,6 +127,29 @@ function finishBoss(m) {
   sfx('bossDie', m.x, m.z, 1.2, 1);
   dropCoins(m.x, m.y + 1.4, m.z, Math.round(m.def.bounty * G.bountyMul), 26);
   G.bossDown = true; removeMonster(m);
+}
+
+const RAISE = { skel: 1, knight: 1, ghoul: 1, mummy: 1, thief: 1, shieldskel: 1, drummer: 1 };
+function tryRaise(m) {
+  if (!RAISE[m.type] || m.def.boss || G.phase !== 'play') return;
+  for (const t of G.towers) {
+    if (!t.alive || t.kind !== 'crypt' || t.state !== 'active' || t.stun > 0) continue;
+    const d = t.def, l = t.lvl, r = t.range; if (dist2(t.x, t.z, m.x, m.z) > r * r) continue;
+    if (t.men.filter(f => !f.gone).length >= d.cap[l] || rnd() > d.chance[l]) return;
+    raiseAlly(t, m); return;
+  }
+}
+function raiseAlly(t, m) {
+  const d = t.def, l = t.lvl, used = t.men.map(f => f.slot); let slot = 0; while (used.includes(slot)) slot++;
+  const f = {
+    isMan: true, raised: true, type: m.type, tower: t, slot, x: m.x, y: m.y, z: m.z, yaw: m.yaw + PI, ph: 0, mv: 0, atk: -1, flinch: 0, flash: 1, hp: d.hp[l], maxHp: d.hp[l], dmg: d.dmg[l],
+    rad: .26, mass: 7, s: m.s, lat: m.lat, onRoad: true, state: 'ready', target: null, cd: .8, torch: false, gone: false, dead: false, vf: 0, scale: m.def.scale,
+    struck: false, alive: true, lI: 0, lx: 0, ly: 0, lz: 0, lseed: rnd() * 9, flame: null, leave: false, lvlUp: false, weapon: null, shield: null, age: 0, foes: 0, tint: [.55, 1.6, .75],
+  };
+  t.men.push(f); G.men.push(f);
+  fxTimed(4, m.x, m.y + .08, m.z, 2.2, 2.2, .3, 1.6, .6, .7, .6, { ground: true }); fxDust(m.x, m.y + .1, m.z, 5, .6, { a: .4, c: [.2, .4, .25] });
+  for (let i = 0; i < 8; i++) fxPart(m.x + rr(-.3, .3), m.y + rr(.1, 1.2), m.z + rr(-.3, .3), 0, rr(.6, 1.4), 0, rr(.4, .8), .06, .5, 2.2, .8, { drag: .8, rise: .4 });
+  sfx('ignite', m.x, m.z, .6, .2);
 }
 
 const SKEL_EYE = [.058, .185, .152, .07], OGRE_EYE = [.055, .125, .15, .06], BUG_EYE = [.05, .055, .19, .035];
@@ -136,15 +171,22 @@ const RIGS = {
   king(m) { m.weapon = KIT.item.khopesh; m.wScale = 1.25; m.heavy = true; m.crown = true; m.wraps = true; return rigHuman(KIT.giant, SPEC.skel, m); },
   spider: rigSpider, scarab: rigSpider, brood: rigSpider, queen: rigSpider, wolf: rigWolf, wraith: rigWraith, toad: rigToad, wisp: rigWisp,
   gargoyle: m => rigBat(m, KIT.garg, .1, .06),
+  thief(m) { m.weapon = KIT.item.sword; m.wScale = .8; m.hood = true; return rigHuman(KIT.skel, SPEC.skel, m); },
+  shieldskel(m) { m.weapon = KIT.item.sword; m.shield = KIT.item.shieldR; m.helm = true; m.plate = true; return rigHuman(KIT.skel, SPEC.skel, m); },
+  priest(m) { m.weapon = KIT.item.staff; m.staff = true; m.hood = true; m.robe = true; return rigHuman(KIT.skel, SPEC.skel, m); },
+  ram(m) { m.weapon = KIT.item.club; m.wScale = 1.35; m.heavy = true; return rigHuman(KIT.ogre, SPEC.ogre, m); },
+  arcgolem(m) { m.heavy = true; return rigHuman(KIT.golem, SPEC.golem, m); },
+  fireel: m => rigWraith(m), iceel: m => rigWraith(m), vampire: m => rigBat(m, KIT.garg, .1, .06),
 };
 function rigMonster(m) { return RIGS[m.type](m); }
 const EYES = {
   skel: SKEL_EYE, knight: SKEL_EYE, giant: [.058, .185, .152, .075], ogre: OGRE_EYE, rat: [.05, .03, .42, .05], bat: [.04, .03, .16, .05], slime: [.13, .2, .44, .08], slimelet: [.13, .2, .44, .08],
   ghoul: OGRE_EYE, brute: OGRE_EYE, jotun: OGRE_EYE, golem: [.04, .1, .17, .05], colossus: [.04, .1, .17, .05], necro: SKEL_EYE, drummer: SKEL_EYE, bomber: SKEL_EYE, mummy: SKEL_EYE, king: [.058, .185, .152, .075],
   spider: BUG_EYE, scarab: BUG_EYE, brood: [.05, .055, .19, .022], queen: [.05, .055, .19, .016], wolf: [.05, .27, .63, .04], wraith: [.045, 1.04, .17, .055], toad: [.125, .345, .285, .035], gargoyle: [.045, .15, .28, .045], wisp: null,
+  thief: SKEL_EYE, shieldskel: SKEL_EYE, priest: SKEL_EYE, ram: OGRE_EYE, arcgolem: [.04, .1, .17, .05], fireel: [.045, 1.04, .17, .055], iceel: [.045, 1.04, .17, .055], vampire: [.045, .15, .28, .045],
 };
 function drawMonster(m, t) {
-  const M = rigMonster(m), ey = EYES[m.type], c = m.def.eye, sc = m.scale, tw = .8 + .2 * Math.sin(t * 9 + m.lseed * 7), ty = m.type;
+  const M = (() => { const t0 = m.tint; if (m.frozen > 0) m.tint = [.7, 1.2, 2.2]; const r = rigMonster(m); m.tint = t0; return r; })(), ey = EYES[m.type], c = m.def.eye, sc = m.scale, tw = .8 + .2 * Math.sin(t * 9 + m.lseed * 7), ty = m.type;
   if (ey) {
     for (const sg of [-1, 1]) { _tv.set(sg * ey[0], ey[1], ey[2]).applyMatrix4(M); FX.add.push(_tv.x, _tv.y, _tv.z, ey[3] * sc * 1.5, ey[3] * sc * 1.5, 0, 0, c[0], c[1], c[2], tw, 0, 0, 0, 0); }
     _tv.set(0, ey[1], ey[2]).applyMatrix4(M); FX.add.push(_tv.x, _tv.y, _tv.z, ey[3] * sc * 9, ey[3] * sc * 9, 0, 0, c[0] * .3, c[1] * .3, c[2] * .3, .5 * tw, 2, 0, 0, 0);
@@ -155,6 +197,12 @@ function drawMonster(m, t) {
   else if (ty === 'colossus' && rnd() < (m.rage ? .5 : .12)) fxPart(m.x + rr(-.7, .7), m.y + rr(.6, 3), m.z + rr(-.7, .7), rr(-.3, .3), rr(.6, 1.8), rr(-.3, .3), rr(.6, 1.2), rr(.05, .08), 2.6, .9, .15, { drag: .3, wob: 1, rise: .3 });
   if (m.torch && m.flame) { const p = RIGOUT.torch; m.flame.x = p.x; m.flame.y = p.y; m.flame.z = p.z; m.lx = p.x; m.ly = p.y + .2; m.lz = p.z; }
   if (m.slowT > 0 && rnd() < .2) { const a = rnd() * TAU; fxBolt([m.x, m.y + m.hitH, m.z], [m.x + Math.cos(a) * m.rad * 1.4, m.y + m.hitH + rr(-.3, .4), m.z + Math.sin(a) * m.rad * 1.4], .08, [.4, .65, 1.3], .028); }
+  if (m.burnT > 0 && rnd() < .6) fxPart(m.x + rr(-.2, .2), m.y + rr(.2, 1) * (m.hitH + .4), m.z + rr(-.2, .2), rr(-.2, .2), rr(.8, 1.6), rr(-.2, .2), rr(.3, .6), rr(.05, .08), 2.6, 1.1, .25, { drag: .5, rise: .5 });
+  if (m.frozen > 0) FX.add.push(m.x, m.y + m.hitH + .3, m.z, 1.5 * sc, 1.8 * sc, 0, 0, .35, .7, 1.4, .35, 2, 0, 0, 0);
+  if (m.elite) FX.add.push(m.x, m.y + .08, m.z, m.rad * 6, m.rad * 6, 0, 0, 1.8, 1.1, .3, .4 + .2 * Math.sin(t * 5), 4, 0, .52, 1);
+  if (ty === 'fireel') { FX.add.push(m.x, m.y + .8, m.z, 2.2, 2.4, 0, 0, 1.4, .5, .12, .3, 2, 0, 0, 0); if (rnd() < .7) fxPart(m.x + rr(-.25, .25), m.y + rr(.2, 1.3), m.z + rr(-.25, .25), 0, rr(.8, 1.6), 0, rr(.3, .6), rr(.05, .09), 2.8, 1.1, .2, { drag: .5, rise: .6 }); }
+  if (ty === 'iceel') { FX.add.push(m.x, m.y + .8, m.z, 2.2, 2.4, 0, 0, .3, .7, 1.5, .28, 2, 0, 0, 0); if (rnd() < .35) fxPart(m.x + rr(-.3, .3), m.y + rr(.2, 1.3), m.z + rr(-.3, .3), 0, rr(-.4, .2), 0, rr(.5, .9), .05, .9, 1.4, 2.3, { drag: 1 }); }
+  if (ty === 'priest' && rnd() < .2) fxPart(m.x + rr(-.3, .3), m.y + rr(.4, 1.6), m.z + rr(-.3, .3), 0, rr(.3, .7), 0, rr(.5, .9), .05, .5, 1.8, .5, { drag: .6 });
   if (m.vis || m.fly) G.hbars.push({ x: m.x, y: m.y + m.def.top * sc / m.def.scale + .22, z: m.z, f: sat(m.hp / m.maxHp), boss: !!m.def.boss, man: false, name: m.def.boss ? m.def.name : null });
 }
 
@@ -171,8 +219,9 @@ function spawnFootman(tower) {
 }
 function killFootman(f, dx, dz) {
   f.dead = true; f.alive = false; f.gone = true; if (f.flame) { fxEmbers(f.flame.x, f.flame.y, f.flame.z, 6, .1); removeFlame(f.flame); f.flame = null; }
-  f.weapon = KIT.item.blade; if (!f.torch) f.shield = KIT.item.shieldH;
-  shatter(e => rigHuman(KIT.foot, SPEC.foot, e), f, [(dx || 0) * 1.6, .8, (dz || 0) * 1.6], { spread: .9, life: .8 });
+  if (f.raised) { shatter(e => RIGS[f.type](e), f, [(dx || 0) * 1.6, .8, (dz || 0) * 1.6], { spread: .9, life: .8 }); fxTimed(5, f.x, f.y + .8, f.z, 1.8, 1.8, .3, 1.4, .6, .7, .25); }
+  else { f.weapon = KIT.item.blade; if (!f.torch) f.shield = KIT.item.shieldH;
+  shatter(e => rigHuman(KIT.foot, SPEC.foot, e), f, [(dx || 0) * 1.6, .8, (dz || 0) * 1.6], { spread: .9, life: .8 }); }
   fxDust(f.x, f.y + .1, f.z, 3, .5, { a: .35 }); sfx('footmanDie', f.x, f.z, .8);
 }
 function slotPos(f, out) {
@@ -182,6 +231,7 @@ function slotPos(f, out) {
 const _fp = { x: 0, y: 0, z: 0, tx: 0, tz: 0 };
 function footmanThink(f, dt) {
   const B = G.B, tw = f.tower; f.age += dt;
+  if (f.raised) { f.hp -= f.maxHp * .03 * dt; if (f.hp <= 0) { killFootman(f, 0, 0); return; } }
   if (f.lvlUp) { f.lvlUp = false; const d = tw.def, r = f.hp / f.maxHp; f.maxHp = d.hp[tw.lvl]; f.hp = f.maxHp * Math.max(r, .6); f.dmg = d.dmg[tw.lvl]; f.scale = .9 + tw.lvl * .05; }
   if (!tw.alive) f.leave = true;
   let gx, gz, face = null, speed = 2.1, fighting = false;
@@ -234,8 +284,9 @@ function strike(a, b, dmg, byMan) {
   }
 }
 function drawFootman(f) {
-  f.weapon = KIT.item.blade; f.shield = f.torch ? null : KIT.item.shieldH; f.wScale = 1;
-  rigHuman(KIT.foot, SPEC.foot, f);
+  if (f.raised) { RIGS[f.type](f); FX.add.push(f.x, f.y + .8 * f.scale, f.z, 1.7, 1.9, 0, 0, .25, .9, .35, .28, 2, 0, 0, 0); if (rnd() < .15) fxPart(f.x + rr(-.2, .2), f.y + rr(.3, 1.2), f.z + rr(-.2, .2), 0, rr(.4, .8), 0, rr(.4, .7), .05, .5, 2, .7, { drag: .8 }); }
+  else { f.weapon = KIT.item.blade; f.shield = f.torch ? null : KIT.item.shieldH; f.wScale = 1;
+  rigHuman(KIT.foot, SPEC.foot, f); }
   if (f.torch && f.flame) { const p = RIGOUT.torch; f.flame.x = p.x; f.flame.y = p.y; f.flame.z = p.z; f.lx = p.x; f.ly = p.y + .2; f.lz = p.z; }
   if (f.hp < f.maxHp) G.hbars.push({ x: f.x, y: f.y + 1.55 * f.scale, z: f.z, f: sat(f.hp / f.maxHp), boss: false, man: true });
 }
@@ -245,14 +296,19 @@ function updateUnits(dt) {
   const B = G.B, mons = G.mons, men = G.men, L = B.L, maxLatBase = ROAD_HALF + .04;
   for (let i = men.length - 1; i >= 0; i--) { const f = men[i]; if (f.gone) { swapRemove(men, i); continue; } footmanThink(f, dt); if (f.gone) swapRemove(men, i); }
   _units.length = 0;
-  for (const m of mons) { m.haste = 0; if (!m.dead && !m.fly && !m.def.ghost) _units.push(m); }
+  for (const m of mons) { m.haste = 0; m.ward = 0; if (!m.dead && !m.fly && !m.def.ghost) _units.push(m); }
   for (const d of mons) if (!d.dead && d.def.aura && d.vis && !d.dying) for (const m of mons) if (m !== d && !m.dead && !m.fly && !m.def.boss && Math.abs(m.s - d.s) < d.def.aura[0]) m.haste = d.def.aura[1];
+  for (const d of mons) { const dd = d.def; if (d.dead || !d.vis || d.dying || !(dd.ward || dd.heal)) continue; const rr2 = (dd.ward || dd.heal)[0];
+    for (const m of mons) { if (m === d || m.dead || m.def.boss || Math.abs(m.s - d.s) > rr2) continue; if (dd.ward && !m.fly) m.ward = dd.ward[1]; if (dd.heal && m.hp < m.maxHp) m.hp = Math.min(m.maxHp, m.hp + m.maxHp * dd.heal[1] * dt); } }
   for (const f of men) if (!f.dead && f.onRoad) _units.push(f);
   const U = _units, nu = U.length;
   for (const m of mons) {
     if (m.dead) continue;
     m.flash = Math.max(0, m.flash - dt * 7); m.flinch = Math.max(0, m.flinch - dt * 4.2);
     if (m.slowT > 0) { m.slowT -= dt; if (m.slowT <= 0) m.slowF = 0; }
+    if (m.frozen > 0) m.frozen -= dt;
+    if (m.burnT > 0 && !(m.dying > 0)) { m.burnT -= dt; m.hp -= m.burnD * dt; if (m.burnBy) m.burnBy.dealt += m.burnD * dt; if (m.hp <= 0) { killMonster(m, 'burn', 0, 0, m.burnBy); continue; } }
+    if ((m.def.heal || m.def.ward) && m.vis) { const b0 = m.beat; m.beat += dt * 4.5; if (Math.floor(m.beat / TAU) !== Math.floor(b0 / TAU)) { const r = (m.def.heal || m.def.ward)[0]; if (m.def.heal) fxTimed(4, m.x, m.y + .08, m.z, r * 1.5, r * 1.5, .4, 1.5, .5, .25, .5, { ground: true }); else fxTimed(4, m.x, m.y + .08, m.z, r * 1.5, r * 1.5, .5, .7, 1.5, .22, .5, { ground: true }); } }
     if (m.fly) { updateBat(m, dt); continue; }
     const def = m.def, maxLat = Math.max(0, maxLatBase - m.rad * .7);
     if (m.dying > 0) {
@@ -263,7 +319,7 @@ function updateUnits(dt) {
     if (m.foe && (m.foe.dead || m.foe.gone)) m.foe = null;
     if (def.explode && m.foe) { m.hp = 0; killMonster(m, 'blast', 0, 0, null); continue; }
     if (def.regen && m.hp < m.maxHp && G.t - m.hitAt > 2.2) m.hp = Math.min(m.maxHp, m.hp + m.maxHp * def.regen * dt);
-    if (def.ghost) { m.gT = (m.gT + dt) % (def.ghost[0] + def.ghost[1]); m.eth = m.gT < def.ghost[0]; }
+    if (def.ghost) { m.gT = (m.gT + dt) % (def.ghost[0] + def.ghost[1]); m.eth = m.gT < def.ghost[0] && !shrineNear(m); }
     if (def.aura) { const b0 = m.beat; m.beat += dt * 7.5; if (m.vis && Math.floor(m.beat / TAU) !== Math.floor(b0 / TAU)) fxTimed(4, m.x, m.y + .08, m.z, def.aura[0] * 1.5, def.aura[0] * 1.5, 1.4, .5, .2, .22, .5, { ground: true }); }
     if (m.cast > 0) m.cast = Math.max(0, m.cast - dt * 1.1);
     if (def.summon && m.vis) {
@@ -281,7 +337,15 @@ function updateUnits(dt) {
         for (const tw of G.towers) if (tw.alive && tw.state === 'active' && dist2(tw.x, tw.z, m.x, m.z) < sp.r * sp.r) { tw.stun = sp.stun; fxTimed(5, tw.x, tw.y + 2, tw.z, 3, 3, .6, 1.2, 2.4, .9, .3); }
       }
     }
-    let want = def.spd * m.spdMul * (1 - m.slowF) * (1 + m.haste), hopMul = 1;
+    if (def.ram && m.vis && !(m.frozen > 0)) {
+      m.stT -= dt;
+      if (m.stT <= 0) {
+        m.stT = def.ram.every; let hit = false;
+        for (const tw of G.towers) if (tw.alive && tw.state === 'active' && dist2(tw.x, tw.z, m.x, m.z) < def.ram.r * def.ram.r) { tw.stun = Math.max(tw.stun || 0, def.ram.stun); hit = true; fxTimed(5, tw.x, tw.y + 2, tw.z, 3, 3, .6, 1.2, 2.4, .9, .3); fxDust(tw.x, tw.y + .2, tw.z, 6, 1, { speed: 2 }); }
+        if (hit) { m.cast = 1; sfx('bossStep', m.x, m.z, .8, 1); sfx('hammer', m.x, m.z, .9, .2); FX.shake = Math.min(1, FX.shake + .3); fxTimed(4, m.x, m.y + .08, m.z, def.ram.r * 2, def.ram.r * 2, 1.2, .7, .3, .5, .5, { ground: true }); }
+      }
+    }
+    let want = def.spd * m.spdMul * (1 - m.slowF) * (1 + m.haste) * (m.frozen > 0 ? 0 : 1), hopMul = 1;
     if (def.frenzy) want *= 1 + def.frenzy * (1 - m.hp / m.maxHp);
     if (def.enrage && m.hp < m.maxHp * def.enrage[0]) { want *= def.enrage[1]; if (!m.rage) { m.rage = true; sfx('roar', m.x, m.z, 1, .9); fxEmbers(m.x, m.y + 2, m.z, 40, 1.2); FX.shake = Math.min(1.2, FX.shake + .6); } }
     if (def.hop) { if (!m.foe) m.hop = (m.hop + dt * def.hop[0] * (1 - m.slowF * .6)) % 1; hopMul = (m.hop > .22 && m.hop < .62) ? def.hop[1] : .1; }
@@ -318,7 +382,7 @@ function updateUnits(dt) {
       m.atk += dt / def.atkT * 1.7;
       if (m.atk >= .5 && !m.struck) { m.struck = true; const f = m.foe; if (f && !f.dead && Math.hypot(f.x - m.x, f.z - m.z) < m.rad + f.rad + (def.boss ? 1.4 : .8)) strike(m, f, def.dmg * G.dmgMul, false); }
       if (m.atk >= 1) { m.atk = -1; m.cd = def.atkT * rr(.35, .5); }
-    } else if (m.foe && m.cd <= 0) { m.atk = 0; m.struck = false; if (def.boss) sfx('roar', m.x, m.z, .5, .7); }
+    } else if (m.foe && m.cd <= 0 && !(m.frozen > 0)) { m.atk = 0; m.struck = false; if (def.boss) sfx('roar', m.x, m.z, .5, .7); }
     if (def.boss && v > .05) { const st = Math.floor(m.ph / PI); if (st !== m.step) { m.step = st; const p = pathAt(B, m.s, _ap), sd = (st & 1) ? 1 : -1; const fxp = m.x - p.tz * sd * .5, fzp = m.z + p.tx * sd * .5; fxDust(fxp, m.y + .05, fzp, 7, 1.0, { speed: 2.2 }); FX.shake = Math.min(1.1, FX.shake + .4); sfx('bossStep', m.x, m.z, 1, .6); FX.decals.add(B.heightAt, fxp, fzp, .55, .02, .017, .015, .5, 9); } }
     if (m.s >= L - .35) { leak(m); continue; }
   }
@@ -364,6 +428,7 @@ function updateBat(m, dt) {
 }
 function leak(m) {
   const B = G.B, n = m.def.lives;
+  if (m.def.steal) { G.gold = Math.max(0, G.gold - m.def.steal); UI.goldShown = Math.min(UI.goldShown, G.gold); UI.deny = 1; }
   G.lives = Math.max(0, G.lives - n); G.leaks++; G.waveLeaks++; G.leakTypes[m.type] = (G.leakTypes[m.type] || 0) + n;
   LT.beaconGutter = 1; UI.hurt = 1;
   if (m.fly) { fxSparks(m.x, m.y, m.z, 14, 5, 3, 1.4, .4); fxSmoke(m.x, m.y, m.z, 0, 1, 0, 1.2, .5, .8, .2, .2, .2, .6); }

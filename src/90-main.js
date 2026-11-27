@@ -1,11 +1,14 @@
 
 const CAM = { yaw: PI / 4, elev: 38 * PI / 180, dist: 90, x: 0, y: 0, z: 0, zoom: 1, fx: 0, fz: 0, sx: 0, sz: 0, man: false, mx: 0, mz: 0, mzoom: 1, base: 27, aspect: 1.6, za: null };
+// 最远视距（缩放下限）。1 = 默认视距，0.8 = 最多比默认多看 25% 的范围。
+const CAM_ZMIN = .8;
 const _cr = new THREE.Vector3(), _cu = new THREE.Vector3(), _cd = new THREE.Vector3(), _ct = new THREE.Vector3();
 function applyCamera() {
   const cam = R.cam, e = CAM.elev, sy = Math.sin(CAM.yaw), cy = Math.cos(CAM.yaw);
   _cd.set(Math.cos(e) * sy, Math.sin(e), Math.cos(e) * cy); _cr.set(cy, 0, -sy); _cu.set(-Math.sin(e) * sy, Math.cos(e), -Math.sin(e) * cy);
   const aspect = R.dw / R.dh, base = Math.max(R.viewH, lerp(R.fitTall, R.fitW, smooth(.62, 1.15, aspect)) / aspect), vh = base / CAM.zoom;
   CAM.base = base; CAM.aspect = aspect;
+  { const zf = Math.ceil(16 / clamp(CAM.zoom, CAM_ZMIN, 1) - .01) / 16; if (zf !== R.zres) { R.zres = zf; resizeTargets(); } }
   R.px = vh / R.ih; R.viewW = vh * aspect; R.dofScale = base / R.viewH / CAM.zoom;
   _ct.set(CAM.x, CAM.y, CAM.z).addScaledVector(_cr, FX.shakeX).addScaledVector(_cu, FX.shakeY - R.shiftY + (R.hudTop || 0) / R.dh * vh * .5);
   const u = _ct.dot(_cr), v = _ct.dot(_cu), us = Math.round(u / R.px) * R.px, vs = Math.round(v / R.px) * R.px;
@@ -38,7 +41,7 @@ function updateCamera(dt) {
   if (CAM.man) { CAM.x = CAM.sx = CAM.mx; CAM.z = CAM.sz = CAM.mz; CAM.zoom = CAM.mzoom; }
   else {
     CAM.x = CAM.sx; CAM.z = CAM.sz;
-    const zt = away ? .62 : (G.phase === 'defeat' ? .92 : (boss ? 1.14 : 1));
+    const zt = away ? CAM_ZMIN : (G.phase === 'defeat' ? .92 : (boss ? 1.14 : 1));
     CAM.zoom = damp(CAM.zoom, zt, zt < CAM.zoom ? 1.1 : .7, dt);
   }
   CAM.y = damp(CAM.y, away ? -2.2 : .4, 1, dt);
@@ -46,7 +49,7 @@ function updateCamera(dt) {
 }
 
 function camGrab() { if (!CAM.man) { CAM.man = true; CAM.mx = CAM.x; CAM.mz = CAM.z; CAM.mzoom = CAM.zoom; } }
-function camZoomMin() { return Math.min(1, CAM.base * CAM.aspect / 56, CAM.base / 46); }
+function camZoomMin() { return Math.max(CAM_ZMIN, Math.min(1, CAM.base * CAM.aspect / 56, CAM.base / 46)); }
 function camPan(dx, dy) {
   if (G.phase === 'crumble' || G.phase === 'rise' || G.phase === 'clear') return;
   camGrab(); const upp = CAM.base * CAM.aspect / CAM.mzoom / R.dw, se = Math.sin(CAM.elev), sy = Math.sin(CAM.yaw), cy = Math.cos(CAM.yaw), du = dx * upp, dv = -dy * upp;
@@ -72,7 +75,7 @@ function sfx(name, x, z, gain = 1, p = 0) {
 const _mm = new THREE.Matrix4(), _mq = new THREE.Quaternion(), _mv = new THREE.Vector3(), _ms = new THREE.Vector3(1, 1, 1), _torch = [];
 function step(rdt) {
   G.slowmo = Math.max(0, G.slowmo - rdt);
-  const dt = rdt * (G.slowmo > 0 ? lerp(1, .32, sat(G.slowmo / .35)) : 1);
+  const dt = rdt * (G.slowmo > 0 ? lerp(1, .32, sat(G.slowmo / .35)) : 1) * (UI.menu && G.phase === 'play' ? .3 : 1);
   G.t += dt; SH.uTime.value = G.t;
   const B = G.B;
   beginParts(); G.hbars.length = 0;
@@ -80,7 +83,7 @@ function step(rdt) {
   const live = G.phase === 'play' || G.phase === 'defeat' || G.phase === 'clear';
   if (live) {
     updateWaves(dt); aiThink(dt);
-    for (const t of G.towers) if (t.alive) t.update(dt);
+    applyShrines(); for (const t of G.towers) if (t.alive) t.update(dt);
     updateUnits(dt);
     for (let i = G.mons.length - 1; i >= 0; i--) if (G.mons[i].dead) swapRemove(G.mons, i);
     updateProjectiles(dt);
@@ -115,6 +118,7 @@ function step(rdt) {
   for (const m of G.mons) if ((m.torch || m.glowL) && !m.dead && m.vis) _torch.push(m);
   for (const f of G.men) if (f.torch && !f.dead) _torch.push(f);
   for (const a of G.arrows) _torch.push(a);
+  for (const o of G.orbs) _torch.push(o);
   updateTorchLights(dt, _torch, CAM.x, CAM.z);
   collectMistLights();
   endParts(); endFX();
@@ -137,7 +141,8 @@ function frame(now) {
     R.fpsText = (1000 / ms).toFixed(0) + ' fps  ' + R.iw + 'x' + R.ih + '  calls ' + R.renderer.info.render.calls + '  mons ' + G.mons.length;
     if (ms > 22.5) { _slow++; _fast = 0; } else { _slow = 0; _fast = ms < 18.6 ? _fast + 1 : 0; }
     _hold -= _acc;
-    if (!HASH.noscale) {
+    // 自动降分辨率默认关闭：画质保持恒定，不因帧率波动或视距变化而变糊。需要时用 #autoscale=1 开启。
+    if (HASH.autoscale && !HASH.noscale) {
       if (_slow >= 3 && R.quality <= .55 && !R.lite) { R.lite = 1; _slow = 0; LT.moon.shadow.mapSize.set(1024, 1024); if (LT.moon.shadow.map) { LT.moon.shadow.map.dispose(); LT.moon.shadow.map = null; } }
       if (_slow >= 2 && R.quality > .55) { R.quality = Math.max(.55, R.quality - .15); resizeRenderer(); _slow = 0; _hold = _back; _back = Math.min(480, _back * 2); }
       else if (_fast >= 3 && R.quality < 1 && _hold <= 0) { R.quality = Math.min(1, R.quality + .15); resizeRenderer(); _fast = 0; }

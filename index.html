@@ -486,10 +486,12 @@ const COL = {
 
 const R = {
   renderer: null, scene: null, cam: null, canvas: null,
-  dw: 2, dh: 2, iw: 2, ih: 2, maxIH: 620, maxPix: 690000, quality: 1, cssW: 2, cssH: 2, safe: [0, 0, 0, 0], lite: 0, opt: !HASH.noopt,
+  dw: 2, dh: 2, iw: 2, ih: 2, iw0: 2, ih0: 2, zres: 1, maxIH: 620, maxPix: 690000, quality: 1, cssW: 2, cssH: 2, safe: [0, 0, 0, 0], lite: 0, opt: !HASH.noopt,
   viewH: 27, fitW: 45, fitTall: 33, shiftY: 0, px: 0.04,
   sub: new THREE.Vector2(), ditherOfs: new THREE.Vector2(),
   focusZ: 60, fade: 0, exposure: 1.0,
+  bright: HASH.bright !== undefined && isFinite(+HASH.bright) ? +HASH.bright : 1.45,
+  ambBoost: HASH.amb !== undefined && isFinite(+HASH.amb) ? +HASH.amb : 1.6,
   rt: {}, mats: {}, fsScene: null, fsCam: null, fsMesh: null,
   NL: 12, lightPos: [], lightCol: [],
 };
@@ -647,7 +649,7 @@ void main(){
   gl_FragColor = vec4(c, 1.0);
 }`, {
     tColor: { value: null }, tBloomA: { value: null }, tBloomB: { value: null },
-    uGrade: { value: new THREE.Vector4(1.0, 0.92, 0.55, 1.0) }, uBloom: { value: new THREE.Vector3(0.35, 0.5, 28) },
+    uGrade: { value: new THREE.Vector4(1.0, 0.92, 0.38, 1.0) }, uBloom: { value: new THREE.Vector3(0.35, 0.5, 28) },
     uLift: { value: new THREE.Vector3(0.010, 0.016, 0.030) }, uDither: { value: R.ditherOfs }, uRes: { value: new THREE.Vector2() },
   });
 
@@ -672,11 +674,22 @@ function resizeRenderer() {
   R.dw = dw; R.dh = dh; R.dpr = dpr; R.cssW = dw / dpr; R.cssH = dh / dpr;
   { const el = document.getElementById('safe'), cs = el ? getComputedStyle(el) : null, v = k => cs ? Math.round((parseFloat(cs[k]) || 0) * dpr) : 0; R.safe = [v('paddingLeft'), v('paddingTop'), v('paddingRight'), v('paddingBottom')]; }
   R.renderer.setSize(dw, dh, false);
+  const hud = document.getElementById('hud'); hud.width = dw; hud.height = dh;
+  resizeTargets();
+}
+
+// 内部渲染目标尺寸。R.zres 是视距补偿系数：镜头拉远时按比例提高内部分辨率，
+// 让每个内部像素对应的世界尺寸保持不变，画面精细度不随视距变化。
+function resizeTargets() {
+  const dw = R.dw, dh = R.dh;
   const texel = Math.max(2, Math.sqrt(dw * dh / R.maxPix), Math.min(dw, dh) / R.maxIH);
   let ih = Math.round(dh / texel * R.quality);
   ih = Math.max(ih, Math.min(dh, 240));
   let iw = Math.max(8, Math.round(dw * ih / dh));
   if (iw > 1500) { ih = Math.round(ih * 1500 / iw); iw = 1500; }
+  R.iw0 = iw; R.ih0 = ih;
+  const zf = R.zres || 1;
+  if (zf > 1) { ih = Math.min(dh, Math.round(ih * zf)); iw = Math.max(8, Math.round(dw * ih / dh)); }
   R.iw = iw; R.ih = ih;
   for (const k in R.rt) { R.rt[k].dispose(); if (R.rt[k].depthTexture) R.rt[k].depthTexture.dispose(); }
   const mk = (w, h, type, filter, depth) => {
@@ -692,7 +705,6 @@ function resizeRenderer() {
   R.rt.bA = mk(bw, bh, HF, LI, false); R.rt.bA2 = mk(bw, bh, HF, LI, false);
   R.rt.bB = mk(cw, ch, HF, LI, false); R.rt.bB2 = mk(cw, ch, HF, LI, false);
   R.rt.final = mk(iw, ih, THREE.UnsignedByteType, LI, false);
-  const hud = document.getElementById('hud'); hud.width = dw; hud.height = dh;
 }
 
 function fsPass(mat, target) {
@@ -716,7 +728,7 @@ function renderFrame() {
   u = M.dof.uniforms; u.tColor.value = T.atmo.texture; u.tDepth.value = T.scene.depthTexture; u.uPx.value.copy(px);
   const zr = cam.far - cam.near;
   const dsc = R.dofScale || 1;
-  u.uDof.value.set((R.focusZ - cam.near) / zr, 3.2 * dsc / zr, 11.5 * dsc / zr, HASH.nodof || R.lite ? 0.6 : Math.max(2, Math.min(R.ih, R.iw * 1.6) * 0.0145));
+  u.uDof.value.set((R.focusZ - cam.near) / zr, 3.2 * dsc / zr, 11.5 * dsc / zr, HASH.nodof || R.lite ? 0.6 : Math.max(2, Math.min(R.ih0, R.iw0 * 1.6) * 0.0145));
   const nd = R.dofD || 20;
   u.uNear.value.set(Math.max(4 * dsc, 0.55 * nd) / zr, Math.max(6, nd) / zr, 0.6, R.opt ? 0.25 : -1);
   fsPass(M.dof, T.dof);
@@ -729,7 +741,7 @@ function renderFrame() {
   u.tColor.value = T.bB.texture; u.uDir.value.set(1.6 / T.bB.width, 0); fsPass(M.blur, T.bB2);
   u.tColor.value = T.bB2.texture; u.uDir.value.set(0, 1.6 / T.bB.height); fsPass(M.blur, T.bB);
   u = M.comp.uniforms; u.tColor.value = T.dof.texture; u.tBloomA.value = T.bA.texture; u.tBloomB.value = T.bB.texture;
-  u.uGrade.value.x = R.exposure; u.uGrade.value.w = R.fade; u.uRes.value.set(R.iw, R.ih);
+  u.uGrade.value.x = R.exposure * R.bright; u.uGrade.value.w = R.fade; u.uRes.value.set(R.iw, R.ih);
   fsPass(M.comp, T.final);
   u = M.up.uniforms; u.tColor.value = T.final.texture; u.uTex.value.set(R.iw, R.ih); u.uOut.value.set(R.dw, R.dh); u.uSeed.value = (SH.uTime.value * 60 % 1000) * 7.13;
   fsPass(M.up, null);
@@ -813,7 +825,7 @@ function lookOf(b) {
 }
 const _lc = new THREE.Color();
 function applyLook(L) {
-  LT.hemi.color.setRGB(L.hs[0], L.hs[1], L.hs[2]); LT.hemi.groundColor.setRGB(L.hg[0], L.hg[1], L.hg[2]); LT.hemi.intensity = L.hi[0];
+  LT.hemi.color.setRGB(L.hs[0], L.hs[1], L.hs[2]); LT.hemi.groundColor.setRGB(L.hg[0], L.hg[1], L.hg[2]); LT.hemi.intensity = L.hi[0] * R.ambBoost;
   LT.moon.color.setRGB(L.mc[0], L.mc[1], L.mc[2]); LT.moon.intensity = L.mi[0]; LT.fill.color.setRGB(L.fc[0], L.fc[1], L.fc[2]); LT.fill.intensity = L.fi[0];
   R.renderer.setClearColor(_lc.setRGB(L.clear[0], L.clear[1], L.clear[2]), 1);
   const a = R.mats.atmo.uniforms, c = R.mats.comp.uniforms;
@@ -2944,7 +2956,7 @@ function rigToad(e) {
 
 const G = {
   B: null, t: 0, gold: 0, lives: 20, maxLives: 20, wave: 0, slain: 0, level: 0, run: 1,
-  towers: [], mons: [], men: [], arrows: [], shells: [], stuck: [], hbars: [], phase: 'play',
+  towers: [], mons: [], men: [], arrows: [], shells: [], stuck: [], hbars: [], orbs: [], zones: [], phase: 'play',
 };
 const TOWER = {
   archer: { name: '弓箭塔', short: '弓箭', icon: 'archer', cost: [70, 90, 140], range: [6.2, 6.8, 7.4], dmg: [9, 11, 14], rate: [.85, .78, .7], n: [1, 2, 3], air: true, ground: true, light: [80, 105, 140], desc: ['发射快速燃烧的箭矢。', '可以命中飞行单位。'] },
@@ -2952,7 +2964,14 @@ const TOWER = {
   spire: { name: '雷暴尖塔', short: '尖塔', icon: 'spire', cost: [110, 120, 180], range: [5.5, 6.0, 6.5], dmg: [17, 25, 35], jumps: [3, 4, 6], rate: [2.3, 2.1, 1.9], slow: [.36, .42, .48], slowT: [1.3, 1.5, 1.7], air: true, ground: true, light: [16, 20, 26], desc: ['连锁闪电，可减速。', '可以命中飞行单位。'] },
   guard: { name: '守卫哨所', short: '守卫', icon: 'guard', cost: [80, 90, 150], range: [3.4, 3.7, 4.0], n: [2, 3, 3], hp: [62, 90, 135], dmg: [7, 10, 15], rate: [7, 6, 5], air: false, ground: true, light: [55, 70, 90], desc: ['阻挡敌人的步兵，', '在路上与敌人对决。'] },
 };
-const TOWER_KINDS = ['archer', 'bombard', 'spire', 'guard'];
+Object.assign(TOWER, {
+  mage: { name: '奥术法师塔', short: '法师', icon: 'mage', cost: [100, 120, 180], range: [6.0, 6.6, 7.2], dmg: [16, 24, 36], rate: [1.25, 1.1, .95], burn: [0, 6, 11], air: true, ground: true, light: [30, 38, 48], lcol: [.75, .45, 1], desc: ['追踪奥术弹，无视护甲，', '二级起附带灼烧。'], vs: '克制：骑士 魔像 石像鬼' },
+  frost: { name: '寒霜方尖碑', short: '寒霜', icon: 'frost', cost: [90, 110, 160], range: [5.6, 6.0, 6.5], dmg: [5, 8, 12], rate: [3.2, 2.9, 2.6], zoneR: [1.5, 1.75, 2.0], zoneT: [3.5, 4.2, 5.0], slow: [.4, .48, .55], freeze: [.9, 1.1, 1.4], air: false, ground: true, light: [20, 26, 32], lcol: [.5, .85, 1], desc: ['在路面留下冰霜区减速，', '停留太久会被冻住。'], vs: '克制：快怪 火元素' },
+  crypt: { name: '亡灵墓穴', short: '墓穴', icon: 'crypt', cost: [110, 120, 170], range: [5.0, 5.6, 6.2], chance: [.35, .45, .6], cap: [3, 4, 6], n: [3, 3, 3], hp: [50, 75, 110], dmg: [8, 11, 16], rate: [1, 1, 1], air: false, ground: true, light: [22, 28, 36], lcol: [.4, 1, .5], desc: ['附近倒下的人形敌人', '可能复活为你作战。'], vs: '克制：成群的骷髅' },
+  shrine: { name: '圣火祭坛', short: '祭坛', icon: 'shrine', cost: [120, 130, 180], range: [4.6, 5.2, 5.8], haste: [.18, .28, .4], rangeUp: [.06, .1, .14], heal: [0, 5, 9], dmg: [0, 0, 0], rate: [1, 1, 1], air: false, ground: false, light: [60, 75, 95], desc: ['不攻击。加快附近塔的', '攻速和射程，幽灵现形。'], vs: '辅助：放在塔群中间' },
+});
+TOWER.archer.vs = '克制：飞行单位'; TOWER.bombard.vs = '克制：成群的地面怪'; TOWER.spire.vs = '克制：飞行 群怪 冰冻目标'; TOWER.guard.vs = '克制：拦截地面怪';
+const TOWER_KINDS = ['archer', 'bombard', 'spire', 'guard', 'mage', 'frost', 'crypt', 'shrine'];
 
 function blueprint(kind, lvl) {
   const pieces = [], mounts = {};
@@ -3049,6 +3068,54 @@ function blueprint(kind, lvl) {
     if (lvl >= 1) piece('bands', 2, S => { for (const u of lvl === 2 ? [.3, .58, .82] : [.4, .75]) S.cyl(lerp(.62, .32, u) + .03, .09, 0, .42 + u * (H - .42), 0, cu, { n: 4, l: L_METAL, r: [0, PI / 4, 0], rough: .45 }); });
     piece('claws', 3, S => { for (let k = 0; k < 4; k++) { const a = k * HPI + PI / 4, cs = Math.cos(a), sn = Math.sin(a); S.seg([cs * .22, H - .12, sn * .22], [cs * .46, H + .26, sn * .46], .06, .045, basL, { l: L_ROCK, n: 4 }); S.seg([cs * .46, H + .26, sn * .46], [cs * .26, H + .74, sn * .26], .045, .012, lvl ? cu : basL, { l: lvl ? L_METAL : L_ROCK, n: 4 }); } S.cyl(.34, .12, 0, H - .02, 0, basL, { n: 4, l: L_ROCK, r: [0, PI / 4, 0] }); });
     mounts.crystal = [0, H + .42, 0]; mounts.crystalS = [.2, .24, .29][lvl]; mounts.shards = [0, 2, 4][lvl]; mounts.rings = lvl === 2; mounts.top = H + 1.2; mounts.flame = null; mounts.lightAt = [0, H + .45, 0];
+  } else if (kind === 'mage') {
+    const H = [2.3, 2.9, 3.5][lvl], Rr = [.6, .66, .72][lvl], vio = C(0x4e3878), rune = C(0xc49cff), br = COL.brass;
+    piece('plinth', 0, S => { S.cyl(Rr + .42, .24, 0, .12, 0, sdk, { n: 8, l: L_MASON }); S.cyl(Rr + .26, .18, 0, .33, 0, st, { n: 8, l: L_MASON }); if (lvl >= 1) for (const [a, b] of corners) S.box(.26, .3, .26, a * (Rr + .3), .39, b * (Rr + .3), sl, { l: L_MASON }); });
+    piece('tower', 1, S => {
+      S.cyl(Rr, H - .42, 0, .42 + (H - .42) / 2, 0, st, { n: 8, l: L_MASON, rt: .86, jit: .02 });
+      S.cyl(Rr * .93 + .04, .1, 0, .42 + (H - .42) * .5, 0, br, { n: 8, l: L_METAL });
+      for (let k = 0; k < 4; k++) { const a = k * HPI + PI / 8, r2 = lerp(Rr, Rr * .86, .3) + .01; S.box(.1, .26, .03, Math.sin(a) * r2, .42 + (H - .42) * .3, Math.cos(a) * r2, rune, { emis: .6, jit: 0, r: [0, a, 0] }); }
+      S.box(.3, .5, .06, 0, .64, Rr * .98, COL.black, { jit: 0 });
+      if (lvl >= 1) for (let k = 0; k < 2; k++) { const a = k * PI + HPI, r2 = lerp(Rr, Rr * .86, .72) + .02; S.box(.28, .62, .03, Math.sin(a) * r2, .42 + (H - .42) * .7, Math.cos(a) * r2, vio, { l: L_CLOTH, r: [0, a, 0] }); S.box(.12, .12, .035, Math.sin(a) * (r2 + .01), .42 + (H - .42) * .72, Math.cos(a) * (r2 + .01), COL.gold, { l: L_METAL, r: [0, a, 0] }); }
+    });
+    piece('crown', 2, S => {
+      S.cyl(Rr * .86 + .14, .12, 0, H + .02, 0, sl, { n: 8, l: L_MASON });
+      for (let k = 0; k < 8; k++) { const a = k * TAU / 8; S.box(.16, .2, .14, Math.cos(a) * (Rr * .86 + .08), H + .18, Math.sin(a) * (Rr * .86 + .08), sl, { l: L_MASON, r: [0, -a + HPI, 0] }); }
+      for (let k = 0; k < 4; k++) { const a = k * HPI + PI / 4, cs = Math.cos(a), sn = Math.sin(a); S.seg([cs * .3, H + .05, sn * .3], [cs * .42, H + .5, sn * .42], .045, .035, br, { l: L_METAL, n: 4 }); S.seg([cs * .42, H + .5, sn * .42], [cs * .2, H + .9, sn * .2], .035, .012, br, { l: L_METAL, n: 4 }); }
+    });
+    mounts.crystal = [0, H + .72, 0]; mounts.crystalS = [.16, .19, .23][lvl]; mounts.shards = [1, 3, 5][lvl]; mounts.rings = lvl === 2; mounts.top = H + 1.3; mounts.flame = null; mounts.lightAt = [0, H + .72, 0];
+  } else if (kind === 'frost') {
+    const H = [2.5, 3.2, 3.9][lvl], ice = C(0xa8dcff), stB = C(0x667186), stBL = C(0x8590a6), ch = .5 + lvl * .15;
+    piece('plinth', 0, S => { S.box(1.5, .22, 1.5, 0, .11, 0, sdk, { l: L_MASON }); S.box(1.12, .2, 1.12, 0, .32, 0, stBL, { l: L_ROCK }); for (const [a, b] of corners) S.cone(.12, ch, a * .6, .42 + ch / 2, b * .6, ice, { n: 4, emis: .35, jit: 0 }); });
+    piece('obelisk', 1, S => {
+      S.cyl(.42, H - .42, 0, .42 + (H - .42) / 2, 0, stB, { n: 4, l: L_ROCK, rt: .55, r: [0, PI / 4, 0], jit: .02 });
+      for (let k = 0; k < 4; k++) { const a = k * HPI, n = 2 + lvl; for (let j = 0; j < n; j++) { const u = (j + .6) / (n + .4), y = .42 + u * (H - .42), r2 = lerp(.42, .23, u) * .7072 + .012; S.box(.06, .16, .02, Math.sin(a) * r2, y, Math.cos(a) * r2, ice, { emis: .55, jit: 0, r: [-.1, a, 0], ro: 'YXZ' }); } }
+      if (lvl >= 1) for (const u of lvl === 2 ? [.35, .7] : [.5]) S.cyl(lerp(.42, .23, u) + .03, .08, 0, .42 + u * (H - .42), 0, COL.ironL, { n: 4, l: L_METAL, r: [0, PI / 4, 0] });
+    });
+    piece('cap', 2, S => { S.cone(.24, .45, 0, H + .2, 0, stBL, { n: 4, l: L_ROCK, r: [0, PI / 4, 0] }); for (let k = 0; k < 3 + lvl; k++) { const a = k * TAU / (3 + lvl), cs = Math.cos(a), sn = Math.sin(a); S.seg([cs * .2, H - .1, sn * .2], [cs * .42, H + .35, sn * .42], .05, .01, ice, { emis: .4, n: 4 }); } });
+    mounts.crystal = [0, H + .95, 0]; mounts.crystalS = [.16, .19, .23][lvl]; mounts.shards = [2, 3, 5][lvl]; mounts.rings = false; mounts.top = H + 1.4; mounts.flame = null; mounts.lightAt = [0, H + .9, 0];
+  } else if (kind === 'crypt') {
+    const W = [1.4, 1.6, 1.8][lvl], D = [1.2, 1.35, 1.5][lvl], wh = [.95, 1.15, 1.4][lvl], moss = C(0x535f52), grn = C(0x7dff9a), bone = C(0xe0d6bd), rh = .5 + lvl * .15, y1 = .18 + wh;
+    piece('floor', 0, S => { S.box(W + .55, .18, D + .6, 0, .09, .05, sdk, { l: L_MASON }); S.box(.8, .1, .35, 0, .05, D / 2 + .5, st, { l: L_MASON }); });
+    piece('walls', 1, S => {
+      S.box(W, wh, D, 0, .18 + wh / 2, 0, moss, { l: L_MASON, jit: .03 });
+      for (const sg of [-1, 1]) for (const zz of [-1, 1]) S.box(.16, wh + .12, .16, sg * W / 2, .18 + (wh + .12) / 2, zz * D / 2, sl, { l: L_MASON });
+      S.box(.52, .78, .08, 0, .18 + .39, D / 2, COL.black, { jit: 0 }); S.box(.34, .6, .02, 0, .18 + .32, D / 2 + .05, grn, { emis: .45, jit: 0 });
+      S.box(.74, .14, .16, 0, .18 + .84, D / 2 + .03, sl, { l: L_MASON });
+      S.box(.18, .18, .04, 0, .18 + .84, D / 2 + .12, bone, { l: L_PLAIN });
+    });
+    piece('roof', 2, S => { S.box(W + .22, .14, D + .22, 0, y1 + .07, 0, sl, { l: L_MASON }); S.cyl(W * .42, rh, 0, y1 + .14 + rh / 2, 0, moss, { n: 6, l: L_MASON, rt: .55 }); S.box(.2, .2, .2, 0, y1 + .14 + rh + .1, 0, sl, { l: L_MASON }); S.sph(.15, 0, y1 + .14 + rh + .32, 0, bone, { l: L_PLAIN, w: 6, h: 4, smooth: false }); });
+    piece('graves', 3, S => { const gs = [[-W / 2 - .38, .55], [W / 2 + .38, .2], [-W / 2 - .34, -.45], [W / 2 + .36, -.5]]; for (let i = 0; i < 2 + lvl; i++) { const [x, z] = gs[i]; S.box(.3, .44, .09, x, .22, z, i & 1 ? sl : st, { l: L_MASON, r: [rng() * .2 - .1, rng() * .5 - .25 + HPI, rng() * .16 - .08] }); } });
+    if (lvl >= 1) piece('braziers', 4, S => { for (const sg of [-1, 1]) { S.cyl(.12, .6, sg * (W / 2 + .14), .3, D / 2 + .38, sdk, { n: 6, l: L_MASON }); S.cyl(.17, .08, sg * (W / 2 + .14), .64, D / 2 + .38, grn, { n: 6, emis: .7, jit: 0 }); } });
+    mounts.flame = null; mounts.lightAt = [0, y1 + rh + .5, 0]; mounts.top = y1 + rh + .7; mounts.door = [0, 0, D / 2 + .45];
+    mounts.green = lvl >= 1 ? [[-(W / 2 + .14), .78, D / 2 + .38], [W / 2 + .14, .78, D / 2 + .38]] : [];
+  } else if (kind === 'shrine') {
+    const Rr = [1.0, 1.1, 1.2][lvl], ph = [1.3, 1.6, 1.9][lvl], np = lvl ? 6 : 4, bs = .55 + lvl * .1, ay = .36;
+    piece('base', 0, S => { S.cyl(Rr + .28, .2, 0, .1, 0, sdk, { n: 10, l: L_MASON }); S.cyl(Rr + .05, .16, 0, .28, 0, sl, { n: 10, l: L_MASON }); S.box(.7, .1, .4, 0, .05, Rr + .38, st, { l: L_MASON }); });
+    piece('pillars', 1, S => { for (let k = 0; k < np; k++) { const a = k * TAU / np + PI / np, x = Math.cos(a) * Rr * .8, z = Math.sin(a) * Rr * .8; S.box(.24, .12, .24, x, ay + .06, z, sl, { l: L_MASON }); S.cyl(.1, ph, x, ay + .12 + ph / 2, z, st, { n: 6, l: L_MASON }); S.cyl(.12, .06, x, ay + .12 + ph * .78, z, COL.gold, { n: 6, l: L_METAL }); S.box(.26, .12, .26, x, ay + .18 + ph, z, sl, { l: L_MASON }); if (lvl === 2) S.cone(.08, .3, x, ay + .39 + ph, z, COL.gold, { n: 4, l: L_METAL }); } });
+    if (lvl >= 1) piece('ring', 2, S => { const n = 12, y = ay + .3 + ph; for (let k = 0; k < n; k++) { const a = k / n * TAU; S.box(.52 * Rr, .08, .1, Math.cos(a) * Rr * .8, y, Math.sin(a) * Rr * .8, COL.brass, { l: L_METAL, r: [0, -a + HPI, 0] }); } });
+    piece('altar', 3, S => { S.box(.6, .5, .6, 0, ay + .25, 0, sl, { l: L_MASON }); S.box(.74, .08, .74, 0, ay + .54, 0, COL.gold, { l: L_METAL }); S.box(.5, .12, .5, 0, ay + .64, 0, st, { l: L_MASON }); brazier(S, 0, ay + .7, 0, bs); });
+    mounts.flame = [0, ay + .7 + bs * .7, 0]; mounts.flameSize = bs; mounts.top = ay + ph + .8;
   } else {
     const W = [1.5, 1.7, 1.9][lvl], D = [1.3, 1.4, 1.5][lvl], wh = [1.05, 1.25, 1.5][lvl], stoneWalls = lvl === 2;
     piece('floor', 0, S => { S.box(W + .5, .16, D + .7, 0, .08, .1, sdk, { l: L_MASON }); S.box(.7, .1, .4, 0, .05, D / 2 + .55, st, { l: L_MASON }); });
@@ -3112,12 +3179,12 @@ class Tower {
     this.spent = this.def.cost[0]; this.state = 'build'; this.bt = 0; this.cool = rr(.2, .8); this.kills = 0; this.dealt = 0; this.alive = true; this.recent = 0;
     this.group = new THREE.Group(); this.group.position.set(this.x, this.y, this.z); this.group.rotation.y = this.yaw; R.scene.add(this.group);
     this.pieces = []; this.staticMesh = null; this.scaf = null; this.flame = null; this.flame2 = null; this.archers = []; this.men = []; this.respawn = 0;
-    this.em = { x: this.x, y: this.y + 3, z: this.z, r: 1, g: .56, b: .26, I: 0, range: 13, on: 0, alive: true, seed: rnd() * 50, spot: kind !== 'spire', dx: this.sn, dz: this.cs, fl: 1, _spot: 0 };
+    this.em = { x: this.x, y: this.y + 3, z: this.z, r: 1, g: .56, b: .26, I: 0, range: 13, on: 0, alive: true, seed: rnd() * 50, spot: !['spire', 'mage', 'frost', 'crypt'].includes(kind), dx: this.sn, dz: this.cs, fl: 1, _spot: 0 };
     LT.emitters[idx] = this.em; pad.tower = this;
     this.gunYaw = 0; this.recoil = 0; this.charge = 0; this.spin = rnd() * 6; this.hover = 0; this.appear = 0;
     this.begin();
   }
-  get range() { return this.def.range[this.lvl]; }
+  get range() { return this.def.range[this.lvl] * (1 + (this.rbuff || 0)); }
   w(l, out) { out.x = this.x + l[0] * this.cs + l[2] * this.sn; out.y = this.y + l[1]; out.z = this.z - l[0] * this.sn + l[2] * this.cs; return out; }
   begin() {
     const bp = blueprint(this.kind, this.lvl); this.bp = bp; this.mounts = bp.mounts; this.bt = 0; this.state = this.lvl ? 'upgrade' : 'build';
@@ -3147,11 +3214,11 @@ class Tower {
     const mt = this.mounts, lvl = this.lvl, d = this.def;
     if (mt.flame) { const p = this.w(mt.flame, {}); this.flame = addFlame({ x: p.x, y: p.y, z: p.z, size: mt.flameSize, on: 0, layers: mt.flameSize > .7 ? 2 : 1, glow: 1 }); this.em.x = p.x; this.em.y = p.y + .25; this.em.z = p.z; this.em.r = 1; this.em.g = .56; this.em.b = .26; }
     if (mt.flame2) { const p = this.w(mt.flame2, {}); this.flame2 = addFlame({ x: p.x, y: p.y, z: p.z, size: mt.flameSize, on: 0 }); }
-    if (mt.lightAt) { const p = this.w(mt.lightAt, {}); this.em.x = p.x; this.em.y = p.y; this.em.z = p.z; this.em.r = .45; this.em.g = .72; this.em.b = 1; }
+    if (mt.lightAt) { const p = this.w(mt.lightAt, {}); this.em.x = p.x; this.em.y = p.y; this.em.z = p.z; const lc = d.lcol || [.45, .72, 1]; this.em.r = lc[0]; this.em.g = lc[1]; this.em.b = lc[2]; }
     this.em.I = d.light[lvl]; this.em.range = this.kind === 'archer' ? 12 : 10.5;
     if (this.kind === 'archer') mt.archers.forEach((a, i) => this.archers.push({ l: a, yaw: this.yaw, draw: 0, cool: .4 + i * .3, e: { scale: .82, ph: 0, mv: 0, atk: -1, bow: true, draw: 0, pitch: 0, tint: [1, .9, .7], x: 0, y: 0, z: 0, yaw: 0, flash: 0 } }));
     if (this.kind === 'bombard') this.makeGun();
-    if (this.kind === 'spire') this.makeCrystal();
+    if (mt.crystal) this.makeCrystal();
     if (this.kind === 'guard') { this.respawn = .2; }
     this.state = 'active'; this.appear = 0;
     fxDust(this.x, this.y + .2, this.z, 10, 1.3, { speed: 2.2 });
@@ -3208,18 +3275,22 @@ class Tower {
     if (TOWER_STUN) { this.stun -= dt; const k = Math.min(1, this.stun * 2); FX.add.push(this.x, this.y + 1.7, this.z, 4.2, 5.6, 0, 0, .2, .5, 1.2, .3 * k, 2, 0, 0, 0); if (rnd() < dt * 5) { const a = rnd() * TAU, h = rr(.6, 3); fxBolt([this.x + Math.cos(a) * .8, this.y + h, this.z + Math.sin(a) * .8], [this.x + Math.cos(a + 1.2) * .8, this.y + h + rr(-.5, .5), this.z + Math.sin(a + 1.2) * .8], .12, [.5, .85, 1.5], .03); } if (rnd() < dt * 18) fxPart(this.x + rr(-.7, .7), this.y + rr(.4, 3.2), this.z + rr(-.7, .7), 0, rr(-.5, .1), 0, rr(.4, .9), rr(.05, .08), .6, 1.1, 2.0, { drag: .5 }); }
     this.em.on = damp(this.em.on, TOWER_STUN ? .12 : 1, TOWER_STUN ? 8 : 3, dt);
     if (this.flame) this.flame.on = this.em.on; if (this.flame2) this.flame2.on = this.em.on;
-    this.cool -= dt;
+    this.cool -= dt * (1 + (this.buff || 0));
     if (this.kind === 'archer') this.updArcher(dt, d, lvl);
     else if (this.kind === 'bombard') this.updBombard(dt, d, lvl);
     else if (this.kind === 'spire') this.updSpire(dt, d, lvl);
+    else if (this.kind === 'mage') this.updMage(dt, d, lvl);
+    else if (this.kind === 'frost') this.updFrost(dt, d, lvl);
+    else if (this.kind === 'crypt') this.updCrypt(dt, d, lvl);
+    else if (this.kind === 'shrine') this.updShrine(dt, d, lvl);
     else this.updGuard(dt, d, lvl);
     TOWER_STUN = false;
   }
   updArcher(dt, d, lvl) {
-    const tgt = findTarget(this.x, this.z, d.range[lvl], true, true);
+    const tgt = findTarget(this.x, this.z, this.range, true, true);
     for (const a of this.archers) {
       const p = this.w(a.l, _ap), e = a.e; e.x = p.x; e.y = p.y - (1 - easeOut(this.appear)) * .5; e.z = p.z; e.scale = .82 * (.3 + .7 * this.appear);
-      a.cool -= dt;
+      a.cool -= dt * (1 + (this.buff || 0));
       if (tgt) {
         const T = clamp(Math.hypot(tgt.x - p.x, tgt.z - p.z) / 14, .22, .62), q = aimPoint(tgt, T, _ap2);
         a.yaw = angDamp(a.yaw, Math.atan2(q.x - p.x, q.z - p.z), 12, dt);
@@ -3236,7 +3307,7 @@ class Tower {
     }
   }
   updBombard(dt, d, lvl) {
-    const tgt = findTarget(this.x, this.z, d.range[lvl], false, true, d.minRange);
+    const tgt = findTarget(this.x, this.z, this.range, false, true, d.minRange);
     this.recoil = Math.max(0, this.recoil - dt * 1.6);
     let aligned = false;
     if (tgt) {
@@ -3260,9 +3331,9 @@ class Tower {
     if (this.cool > 0 && this.cool < 1.2 && rnd() < dt * 5) { this.carriage.updateMatrixWorld(true); const mz = _tv.set(0, 0, this.mounts.gunLen - .2).applyMatrix4(this.barrel.matrixWorld); fxSmoke(mz.x, mz.y, mz.z, rr(-.1, .1), rr(.3, .6), rr(-.1, .1), 1.2, .18, .35, .3, .3, .3, .22, { drag: 1 }); }
   }
   updSpire(dt, d, lvl) {
-    const tgt = findTarget(this.x, this.z, d.range[lvl], true, true);
+    const tgt = findTarget(this.x, this.z, this.range, true, true);
     const was = this.charge;
-    this.charge = tgt ? Math.min(1, this.charge + dt / d.rate[lvl]) : Math.max(0, this.charge - dt * .25);
+    this.charge = tgt ? Math.min(1, this.charge + dt * (1 + (this.buff || 0)) / d.rate[lvl]) : Math.max(0, this.charge - dt * .25);
     if (was < .68 && this.charge >= .68 && tgt) sfx('charge', this.x, this.z, .5);
     const c = this.charge, pulse = .85 + .15 * Math.sin(G.t * (6 + c * 20));
     this.spin += dt * (.8 + c * 5); this.core.rotation.y = this.spin; this.core.position.y = Math.sin(G.t * 1.6 + this.idx) * .05;
@@ -3275,7 +3346,7 @@ class Tower {
     if (c > .5 && rnd() < dt * 14 * c) { const a = rnd() * TAU; fxBolt([cp.x, cp.y, cp.z], [cp.x + Math.cos(a) * .7, cp.y + rr(-.5, .5), cp.z + Math.sin(a) * .7], .1, [.45, .7, 1.4], .035); }
     if (c >= 1 && tgt) {
       this.charge = 0; let from = [cp.x, cp.y, cp.z], cur = tgt, dmg = d.dmg[lvl]; const hit = [];
-      for (let j = 0; j < d.jumps[lvl] && cur; j++) {
+      let jl = d.jumps[lvl]; for (let j = 0; j < jl && cur; j++) { if (cur.frozen > 0 && jl < d.jumps[lvl] + 2) jl++;
         hit.push(cur); const to = [cur.x, cur.y + cur.hitH, cur.z];
         fxBolt(from, to, .26 - j * .015, [.5, .78, 1.6], .1 - j * .008);
         fxSparks(to[0], to[1], to[2], 5, 3.5, 1.2, 2, 4, { grav: 3, size: .06 }); fxTimed(2, to[0], to[1], to[2], 1.6, 1.6, .5, .9, 2, .7, .16);
@@ -3291,6 +3362,56 @@ class Tower {
   updGuard(dt, d, lvl) {
     for (let i = this.men.length - 1; i >= 0; i--) if (this.men[i].gone) this.men.splice(i, 1);
     if (this.men.length < d.n[lvl]) { this.respawn -= dt; if (this.respawn <= 0) { this.respawn = this.men.length === 0 && G.t < 4 ? .5 : d.rate[lvl]; spawnFootman(this); } }
+  }
+  animOrb(dt, c, col) {
+    this.spin += dt * (.8 + c * 4); this.core.rotation.y = this.spin; this.core.position.y = Math.sin(G.t * 1.6 + this.idx) * .08;
+    this.shards.forEach((s, i) => { const a = this.spin * .7 + i * TAU / this.shards.length; s.position.set(Math.cos(a) * .55, Math.sin(a * 1.3) * .14 - .05, Math.sin(a) * .55); s.rotation.y = -a * 2; });
+    if (this.ringG) this.ringG.rotation.y = -this.spin * .25;
+    const k = (.9 + 3.2 * c * c) * this.appear; this.cmat.color.setRGB(col[0] * k, col[1] * k, col[2] * k);
+    const cp = this.w(this.mounts.crystal, _ap); FX.add.push(cp.x, cp.y, cp.z, 1.4 + c, 1.4 + c, 0, 0, col[0] * .45, col[1] * .45, col[2] * .45, .12 + .2 * c, 2, 0, 0, 0);
+    return cp;
+  }
+  updMage(dt, d, lvl) {
+    const tgt = findTarget(this.x, this.z, this.range, true, true);
+    if (!tgt) this.cool = Math.max(this.cool, .25);
+    const c = 1 - sat(this.cool / d.rate[lvl]), cp = this.animOrb(dt, c, [.78, .42, 1.3]);
+    this.em.I = d.light[lvl] * (.8 + .5 * c);
+    if (tgt && this.cool <= 0) {
+      this.cool = d.rate[lvl] * rr(.95, 1.05);
+      G.orbs.push({ x: cp.x, y: cp.y, z: cp.z, vx: rr(-1, 1), vy: 2.6, vz: rr(-1, 1), m: tgt, dmg: d.dmg[lvl], burn: d.burn[lvl], tower: this, life: 3.5, alive: true, lI: 20, lCol: 0xb070ff, lx: cp.x, ly: cp.y, lz: cp.z, lseed: rnd() * 9 });
+      lightFlash(cp.x, cp.y, cp.z, 0xc090ff, 220, .14, 10); sfx('zap', this.x, this.z, .45, .95);
+      for (let i = 0; i < 6; i++) fxPart(cp.x, cp.y, cp.z, rr(-1.2, 1.2), rr(-.4, 1.2), rr(-1.2, 1.2), rr(.3, .6), .05, 1.8, .9, 3, { drag: 2 });
+    }
+  }
+  updFrost(dt, d, lvl) {
+    const tgt = findTarget(this.x, this.z, this.range, false, true);
+    if (!tgt) this.cool = Math.max(this.cool, .3);
+    const c = 1 - sat(this.cool / d.rate[lvl]), cp = this.animOrb(dt, c, [.45, .85, 1.35]);
+    this.em.I = d.light[lvl] * (.8 + .5 * c);
+    if (tgt && this.cool <= 0) {
+      this.cool = d.rate[lvl] * rr(.95, 1.05);
+      const q = aimPoint(tgt, .55, _ap2), gy = G.B.heightAt(q.x, q.z), zr = d.zoneR[lvl], cx = cp.x, cy = cp.y, cz = cp.z;
+      G.zones.push({ x: q.x, y: gy, z: q.z, r: zr, t: 0, T: d.zoneT[lvl], tick: .2, tower: this, lvl });
+      fxBolt([cx, cy, cz], [q.x, gy + .3, q.z], .3, [.6, 1.0, 1.8], .09);
+      fxTimed(4, q.x, gy + .08, q.z, zr * 2.6, zr * 2.6, .6, 1.1, 1.9, .8, .45, { ground: true });
+      for (let i = 0; i < 12; i++) { const a = rnd() * TAU; fxPart(q.x, gy + .2, q.z, Math.cos(a) * rr(1, 3), rr(1, 3), Math.sin(a) * rr(1, 3), rr(.4, .8), rr(.05, .08), .9, 1.4, 2.3, { grav: 6, drag: .5 }); }
+      lightFlash(q.x, gy + .6, q.z, 0xa0e0ff, 320, .25, 10); sfx('zap', q.x, q.z, .55, .05);
+    }
+  }
+  updCrypt(dt, d, lvl) {
+    for (let i = this.men.length - 1; i >= 0; i--) if (this.men[i].gone) this.men.splice(i, 1);
+    const p = this.w(this.mounts.lightAt, _ap), pulse = .8 + .2 * Math.sin(G.t * 3 + this.idx);
+    FX.add.push(p.x, p.y, p.z, 1.6, 1.6, 0, 0, .3, 1.2, .45, .28 * pulse * this.appear, 2, 0, 0, 0);
+    if (rnd() < dt * 6) fxPart(p.x + rr(-.15, .15), p.y, p.z + rr(-.15, .15), rr(-.1, .1), rr(.4, .9), rr(-.1, .1), rr(.6, 1.1), rr(.05, .08), .5, 2.0, .7, { drag: .6, rise: .3 });
+    for (const g of this.mounts.green || []) { const q = this.w(g, _ap2); FX.add.push(q.x, q.y, q.z, .5, .7, 0, 0, .5, 2.2, .8, .8 * pulse, 0, 0, 0, 0); if (rnd() < dt * 4) fxPart(q.x, q.y, q.z, 0, rr(.5, 1), 0, rr(.3, .6), .05, .6, 2.2, .8, { drag: .5, rise: .5 }); }
+    this.em.I = d.light[lvl] * pulse;
+  }
+  updShrine(dt, d, lvl) {
+    const r = d.range[lvl], pulse = .7 + .3 * Math.sin(G.t * 2 + this.idx);
+    FX.add.push(this.x, this.y + .1, this.z, r * 2, r * 2, 0, 0, 1.6, 1.1, .4, .16 * pulse * this.appear, 4, 0, .52, 1);
+    if (rnd() < dt * 5) { const a = rnd() * TAU, q = rr(.4, 1) * r; fxPart(this.x + Math.cos(a) * q, this.y + .2, this.z + Math.sin(a) * q, 0, rr(.4, 1), 0, rr(.6, 1.2), .05, 2.4, 1.6, .5, { drag: .8, rise: .3 }); }
+    if (d.heal[lvl] > 0) for (const f of G.men) if (!f.dead && !f.raised && f.hp < f.maxHp && dist2(f.x, f.z, this.x, this.z) < r * r) f.hp = Math.min(f.maxHp, f.hp + d.heal[lvl] * dt);
+    for (const t of G.towers) if (t !== this && t.alive && t.buff > 0 && t.state === 'active' && rnd() < dt * .8 && dist2(t.x, t.z, this.x, this.z) < r * r) fxBolt([this.x, this.y + 1.4, this.z], [t.x, t.y + 1.5, t.z], .18, [1.6, 1.1, .4], .03);
   }
   dispose() { this.alive = false; this.em.alive = false; LT.emitters[this.idx] = null; this.clearModel(false); R.scene.remove(this.group); this.pad.tower = null; }
 }
@@ -3327,6 +3448,7 @@ function updateProjectiles(dt) {
       }
     }
   }
+  updateOrbs(dt); updateZones(dt);
   const St = G.stuck;
   for (let i = St.length - 1; i >= 0; i--) {
     const s = St[i]; s.life -= dt; if (s.life <= 0) { swapRemove(St, i); continue; }
@@ -3355,6 +3477,80 @@ function explodeAt(x, y, z, dmg, splash, tower) {
     hitMonster(m, dmg * k, 'blast', (m.x - x) / l, (m.z - z) / l, tower);
   }
   for (let i = 0; i < 5; i++) { _tm.compose(_tv.set(x + rr(-.3, .3), y + .2, z + rr(-.3, .3)), _tq.set(rr(-1, 1), rr(-1, 1), rr(-1, 1), 1).normalize(), _ts.set(.6, .6, .6)); addDebris(KIT.rubble, _tm, [.5, .45, .4], rr(-3, 3), rr(3, 6), rr(-3, 3), rr(4, 10), rr(1.6, 2.6)); }
+}
+
+function updateOrbs(dt) {
+  const O = G.orbs, sp = 10;
+  for (let i = O.length - 1; i >= 0; i--) {
+    const o = O[i], m = o.m; o.life -= dt;
+    if (!m || m.dead || m.hp <= 0 || o.life <= 0) { fxTimed(2, o.x, o.y, o.z, .8, .8, 1.2, .6, 2, .6, .15); o.alive = false; swapRemove(O, i); continue; }
+    const dx = m.x - o.x, dy = m.y + (m.fly ? 0 : m.hitH) - o.y, dz = m.z - o.z, l = Math.hypot(dx, dy, dz) || 1, k = 1 - Math.exp(-7 * dt);
+    o.vx += (dx / l * sp - o.vx) * k; o.vy += (dy / l * sp - o.vy) * k; o.vz += (dz / l * sp - o.vz) * k;
+    o.x += o.vx * dt; o.y += o.vy * dt; o.z += o.vz * dt; o.lx = o.x; o.ly = o.y; o.lz = o.z;
+    FX.add.push(o.x, o.y, o.z, .34, .34, 0, 0, 2.4, 1.3, 3.6, 1, 0, 0, 0, 0); FX.add.push(o.x, o.y, o.z, 1.2, 1.2, 0, 0, .7, .35, 1.2, .3, 2, 0, 0, 0);
+    if (rnd() < .7) fxPart(o.x, o.y, o.z, rr(-.3, .3), rr(-.3, .3), rr(-.3, .3), rr(.25, .5), .05, 1.8, .9, 3, { drag: 2 });
+    if (l < .5) {
+      o.alive = false; swapRemove(O, i);
+      fxSparks(o.x, o.y, o.z, 6, 3, 1.8, 1, 3, { size: .055, grav: 3 }); fxTimed(2, o.x, o.y, o.z, 1.4, 1.4, 1.4, .7, 2.4, .8, .16); sfx('arrowHit', o.x, o.z, .45, .2);
+      hitMonster(m, o.dmg, 'arcane', o.vx / sp, o.vz / sp, o.tower);
+      if (o.burn > 0 && !m.dead) applyBurn(m, o.burn, 3, o.tower);
+    }
+  }
+}
+function updateZones(dt) {
+  const Z = G.zones;
+  for (let i = Z.length - 1; i >= 0; i--) {
+    const z = Z[i]; z.t += dt; if (z.t >= z.T) { swapRemove(Z, i); continue; }
+    const a = Math.min(1, z.t * 4, (z.T - z.t) * 1.5), d = z.tower.def, l = z.lvl;
+    FX.add.push(z.x, z.y + .07, z.z, z.r * 2.2, z.r * 2.2, 0, 0, .35, .7, 1.3, .6 * a, 4, 0, .52, 1);
+    if (rnd() < dt * 12) { const an = rnd() * TAU, q = Math.sqrt(rnd()) * z.r; fxPart(z.x + Math.cos(an) * q, z.y + .1, z.z + Math.sin(an) * q, 0, rr(.3, .8), 0, rr(.5, 1), .05, .9, 1.4, 2.2, { drag: 1 }); }
+    z.tick -= dt; const tick = z.tick <= 0; if (tick) z.tick = .5;
+    for (const m of G.mons) {
+      if (m.dead || m.fly || m.hp <= 0 || !m.vis) continue;
+      const r2 = z.r + m.rad; if (dist2(m.x, m.z, z.x, z.z) > r2 * r2) continue;
+      slowMonster(m, d.slow[l], .45); m.chill = (m.chill || 0) + dt * 2;
+      if (m.chill >= 1.8 && !(m.frozen > 0)) { m.chill = 0; freezeMonster(m, d.freeze[l], z.tower); }
+      if (tick) hitMonster(m, d.dmg[l], 'frost', 0, 0, z.tower);
+    }
+  }
+}
+function applyBurn(m, dps, T, tower) {
+  if (m.dead || m.hp <= 0 || m.def.burnImm) return;
+  if (m.frozen > 0) { elementBurst(m, tower); return; }
+  m.burnD = Math.max(m.burnT > 0 ? m.burnD : 0, dps); m.burnT = Math.max(m.burnT || 0, T); m.burnBy = tower;
+}
+function freezeMonster(m, T, tower) {
+  if (m.dead || m.hp <= 0 || m.def.freezeImm) return;
+  if (m.def.boss) T *= .35;
+  if (m.burnT > 0) { elementBurst(m, tower); return; }
+  m.frozen = Math.max(m.frozen || 0, T * (m.def.fireEl ? 1.5 : 1));
+  fxTimed(2, m.x, m.y + (m.hitH || .4), m.z, 1.4, 1.4, .6, 1.1, 1.9, .8, .2); sfx('zap', m.x, m.z, .35, .05);
+}
+function elementBurst(m, tower) {
+  const y = m.y + (m.hitH || .4); m.frozen = 0; m.burnT = 0;
+  fxSparks(m.x, y, m.z, 12, 4.5, 1.6, 1.4, 2.2, { size: .06, grav: 5 }); fxSparks(m.x, y, m.z, 8, 3.5, 2.6, 1.0, .3, { size: .06, grav: 4 });
+  fxTimed(5, m.x, y, m.z, 2.4, 2.4, 1.6, 1.2, 1.8, .9, .25); lightFlash(m.x, y + .4, m.z, 0xd0e8ff, 380, .2, 12); sfx('explode', m.x, m.z, .55, .9);
+  hitMonster(m, 35 + m.maxHp * .1 * (m.def.boss ? .25 : 1), 'arcane', 0, 0, tower);
+}
+function applyShrines() {
+  for (const t of G.towers) { t.buff = 0; t.rbuff = 0; }
+  for (const s of G.towers) {
+    if (!s.alive || s.kind !== 'shrine' || s.state !== 'active' || s.stun > 0) continue;
+    const d = s.def, l = s.lvl, r2 = d.range[l] * d.range[l];
+    for (const t of G.towers) if (t !== s && t.alive && t.kind !== 'shrine' && dist2(t.x, t.z, s.x, s.z) < r2) { t.buff = Math.max(t.buff, d.haste[l]); t.rbuff = Math.max(t.rbuff, d.rangeUp[l]); }
+  }
+}
+function shrineNear(m) {
+  for (const t of G.towers) if (t.alive && t.kind === 'shrine' && t.state === 'active') { const r = t.def.range[t.lvl]; if (dist2(t.x, t.z, m.x, m.z) < r * r) return true; }
+  return false;
+}
+function towerStat(k, l) {
+  const d = TOWER[k];
+  if (k === 'guard') return d.n[l] + ' 名步兵 · ' + d.hp[l] + ' 生命';
+  if (k === 'crypt') return '复活率 ' + Math.round(d.chance[l] * 100) + '% · 上限 ' + d.cap[l];
+  if (k === 'shrine') return '攻速 +' + Math.round(d.haste[l] * 100) + '% · 射程 +' + Math.round(d.rangeUp[l] * 100) + '%';
+  if (k === 'frost') return '射程 ' + d.range[l].toFixed(1) + ' · 减速 ' + Math.round(d.slow[l] * 100) + '%';
+  return '射程 ' + d.range[l].toFixed(1) + ' · 伤害 ' + d.dmg[l];
 }
 
 
@@ -3386,6 +3582,14 @@ const MON = {
   queen: { name: '育巢女王', tip: '持续孵化蜘蛛。', hp: 1150, spd: .85, rad: 1.1, mass: 40, bounty: 200, lives: 5, hitH: 1.0, top: 2.0, dmg: 40, atkT: 1.5, eye: [3.8, .3, .9], scale: 4.2, boss: true, summon: { type: 'spider', n: 2, every: 8, max: 99, hp: 1 }, death: 'bug', cat: 'armor', tint: [.85, .55, 1.0] },
   colossus: { name: '熔岩巨像', tip: '濒死时会加速。', hp: 1250, spd: .7, rad: 1.05, mass: 60, bounty: 200, lives: 5, hitH: 2.2, top: 4.3, dmg: 60, atkT: 2.0, eye: [4, 1.6, .3], scale: 3.0, boss: true, armor: .85, slowRes: .3, enrage: [.3, 1.25], death: 'rock', cat: 'armor', tint: [1.5, .5, .26] },
   king: { name: '埋葬之王', tip: '会召唤木乃伊与它同行。', hp: 1250, spd: .86, rad: .92, mass: 40, bounty: 200, lives: 5, hitH: 2.2, top: 4.2, dmg: 46, atkT: 1.7, eye: [.6, 3.0, 2.6], scale: 2.7, boss: true, summon: { type: 'mummy', n: 1, every: 9, max: 99, hp: .7 }, death: 'bones', blade: true, cat: 'armor', tint: [1.2, 1.0, .55] },
+  thief: { name: '暗影盗贼', tip: '漏过防线会偷走 30 金币。', hp: 30, spd: 2.2, rad: .25, mass: .8, bounty: 9, lives: 1, hitH: .7, top: 1.4, dmg: 5, atkT: .6, eye: [3.4, .4, 2.6], scale: .92, slip: true, steal: 30, death: 'bones', blade: true, cat: 'swarm', tint: [.45, .4, .6] },
+  fireel: { name: '火焰元素', tip: '免疫灼烧，冰冻对它效果翻倍。', hp: 70, spd: 1.35, rad: .3, mass: 1, bounty: 11, lives: 1, hitH: .8, top: 1.5, dmg: 10, atkT: .9, eye: [4, 2.4, .6], scale: 1, burnImm: true, fireEl: true, death: 'ghost', tint: [2.4, .9, .3] },
+  iceel: { name: '冰霜元素', tip: '免疫减速和冰冻，需要硬输出。', hp: 95, spd: 1.1, rad: .3, mass: 1.2, bounty: 12, lives: 1, hitH: .8, top: 1.5, dmg: 10, atkT: 1, eye: [.8, 2.2, 4], scale: 1.05, slowRes: 1, freezeImm: true, death: 'ghost', tint: [.6, 1.3, 2.6] },
+  shieldskel: { name: '盾墙骷髅', tip: '替附近的怪物挡下箭矢和炮弹。', hp: 110, spd: .95, rad: .32, mass: 2.4, bounty: 14, lives: 1, hitH: .8, top: 1.6, dmg: 9, atkT: 1.1, eye: [.5, 1.7, 3.4], scale: 1.1, armor: .5, ward: [2.6, .6], death: 'bones', blade: true, cat: 'armor', tint: [.8, .82, .95] },
+  priest: { name: '瘟疫祭司', tip: '持续治疗附近的怪物，优先击杀。', hp: 90, spd: .95, rad: .3, mass: 1.4, bounty: 16, lives: 1, hitH: .8, top: 1.8, dmg: 5, atkT: 1.2, eye: [1, 3.4, .8], scale: 1.05, heal: [3.2, .05], death: 'bones', tint: [.75, .95, .6] },
+  vampire: { name: '吸血鬼', tip: '飞行单位，死后化作一群蝙蝠。', hp: 80, spd: 1.7, rad: .32, mass: 1, bounty: 14, lives: 2, hitH: 0, top: .6, dmg: 0, atkT: 1, eye: [4, .5, .5], scale: 1.1, fly: true, split: ['bat', 3], death: 'bat', cat: 'air', alt: [2.6, 3.3], flap: 11, tint: [1.6, .45, .5] },
+  ram: { name: '攻城槌', tip: '冲撞路边的塔，让它瘫痪几秒。', hp: 320, spd: .75, rad: .5, mass: 9, bounty: 28, lives: 2, hitH: 1.0, top: 1.95, dmg: 20, atkT: 1.4, eye: [3.6, 1.4, .3], scale: 1.45, ram: { every: 6.5, r: 3.4, stun: 2.2 }, death: 'flesh', cat: 'armor', tint: [1.1, .8, .6] },
+  arcgolem: { name: '奥术傀儡', tip: '魔法抗性很高，法术只造成一半伤害。', hp: 420, spd: .66, rad: .5, mass: 9, bounty: 32, lives: 2, hitH: 1.1, top: 2.1, dmg: 24, atkT: 1.5, eye: [2.4, 1.2, 4], scale: 1.45, armor: .6, mres: .5, death: 'rock', cat: 'armor', tint: [.9, .7, 1.6] },
 };
 
 function spawnMonster(type, o = {}) {
@@ -3395,9 +3599,10 @@ function spawnMonster(type, o = {}) {
     x: 0, y: 0, z: 0, yaw: 0, ph: rnd() * 6, mv: 1, vf: def.spd, spdNow: def.spd, spdMul: rr(.93, 1.07) * (o.spdMul || 1), slowT: 0, slowF: 0,
     flash: 0, flinch: 0, atk: -1, cd: rr(.1, .5), foe: null, prog: 0, vis: false, dead: false, dying: 0, ks: 0, kl: 0, hop: rnd(), rad: def.rad * (o.radMul || 1), mass: def.mass,
     hitH: def.hitH, scale: def.scale * rr(.95, 1.05), fly: !!def.fly, torch: false, flame: null, tint: (bt && bt[type]) || def.tint || null, men: 0, struck: false, step: 0, alive: true, lI: 0, lx: 0, ly: 0, lz: 0, lseed: rnd() * 9, vx: 0, vz: 0, pop: o.pop || 0,
-    haste: 0, hitAt: -9, beat: rnd() * 6, eth: false, gT: rnd() * 4, cast: 0, sumN: 0, sumT: def.summon ? def.summon.every * rr(.45, .7) : 0, stT: def.stomp ? def.stomp.every * .6 : 0, rage: false,
+    haste: 0, hitAt: -9, beat: rnd() * 6, eth: false, gT: rnd() * 4, cast: 0, sumN: 0, sumT: def.summon ? def.summon.every * rr(.45, .7) : 0, stT: def.stomp ? def.stomp.every * .6 : def.ram ? def.ram.every * .5 : 0, frozen: 0, burnT: 0, burnD: 0, chill: 0, ward: 0, rage: false,
   };
   m.home = m.lane = m.lat;
+  if (o.elite) { m.elite = true; m.scale *= 1.15; }
   if (type === 'skel' && rnd() < .26) { m.torch = true; m.flame = addFlame({ x: 0, y: -50, z: 0, size: .36, embers: .45, glow: .8 }); m.lI = 30; }
   if (type === 'bomber') { m.torch = true; m.flame = addFlame({ x: 0, y: -50, z: 0, size: .3, embers: .7, glow: .7 }); m.lI = 26; }
   if (type === 'skel') m.tint = rnd() < .3 ? [.9, .86, .74] : null;
@@ -3416,6 +3621,8 @@ function hitMonster(m, dmg, kind, dx, dz, tower) {
   if (m.dead || m.hp <= 0) return false;
   if (m.eth) { if (kind === 'arrow' || kind === 'sword') { if (rnd() < .5) fxTimed(0, m.x + rr(-.2, .2), m.y + m.hitH + rr(-.2, .3), m.z + rr(-.2, .2), .5, .5, .5, .9, 1.8, .7, .18); return false; } dmg *= .5; }
   if (kind === 'arrow' && m.def.armor) { dmg *= m.def.armor; if (rnd() < .6) { fxSparks(m.x, m.y + m.hitH, m.z, 3, 3, 2.4, 2.2, 1.6, { size: .05 }); } }
+  if (m.ward && (kind === 'arrow' || kind === 'blast')) dmg *= m.ward;
+  if (m.def.mres && (kind === 'arcane' || kind === 'bolt' || kind === 'frost')) dmg *= m.def.mres;
   m.hp -= dmg; m.flash = 1; m.flinch = m.def.boss ? Math.max(m.flinch, .25) : 1; m.hitAt = G.t;
   const kb = (kind === 'blast' ? 2.6 : kind === 'sword' ? 1.3 : kind === 'arrow' ? .7 : .2) / Math.sqrt(m.mass);
   if (!m.fly && (dx || dz)) { const p = pathAt(G.B, m.s, _ap); m.ks += (dx * p.tx + dz * p.tz) * kb; m.kl += (-dx * p.tz + dz * p.tx) * kb; }
@@ -3460,9 +3667,10 @@ function killMonster(m, kind, dx, dz, tower) {
     for (let i = 0; i < 5; i++) fxSmoke(m.x, m.y + .3, m.z, rr(-1, 1), rr(.5, 1.5), rr(-1, 1), rr(.4, .8), .35 * sc, .5, .12, .3, .12, .5, { drag: 3 });
     sfx('squelch', m.x, m.z, .8, big ? .8 : .2);
   }
-  if (def.split && G.mons.length < 90) { const [ty, n] = def.split; for (let i = 0; i < n; i++) { const u = n > 1 ? i / (n - 1) * 2 - 1 : 0; spawnMonster(ty, { s: Math.max(.5, m.s - .15 - .1 * Math.abs(u)), lat: clamp(m.lat + u * .34, -.95, .95), hpMul: m.maxHp / def.hp, pop: 1 }).kl = u * 2.2; } }
+  if (def.split && G.mons.length < 90) { const [ty, n] = def.split; for (let i = 0; i < n; i++) { const u = n > 1 ? i / (n - 1) * 2 - 1 : 0, q = spawnMonster(ty, { s: Math.max(.5, m.s - .15 - .1 * Math.abs(u)), lat: clamp(m.lat + u * .34, -.95, .95), hpMul: m.maxHp / def.hp * (m.fly ? .6 : 1), pop: 1 }); if (q.fly) { q.x = m.x + u * .4; q.y = m.y; q.z = m.z; q.s = m.s; q.vx = rr(-2, 2); q.vz = rr(-2, 2); } else q.kl = u * 2.2; } }
+  tryRaise(m);
   if (m.torch && m.flame) fxEmbers(m.flame.x, m.flame.y, m.flame.z, 8, .15);
-  dropCoins(m.x, m.y + m.hitH * .6, m.z, Math.round(def.bounty * G.bountyMul), clamp(Math.round(def.bounty / 3), 1, 6));
+  dropCoins(m.x, m.y + m.hitH * .6, m.z, Math.round(def.bounty * G.bountyMul * (m.elite ? 2 : 1)), clamp(Math.round(def.bounty / 3), 1, 6));
   removeMonster(m);
   if (def.explode) blastAround(m, def.explode);
 }
@@ -3474,6 +3682,29 @@ function finishBoss(m) {
   sfx('bossDie', m.x, m.z, 1.2, 1);
   dropCoins(m.x, m.y + 1.4, m.z, Math.round(m.def.bounty * G.bountyMul), 26);
   G.bossDown = true; removeMonster(m);
+}
+
+const RAISE = { skel: 1, knight: 1, ghoul: 1, mummy: 1, thief: 1, shieldskel: 1, drummer: 1 };
+function tryRaise(m) {
+  if (!RAISE[m.type] || m.def.boss || G.phase !== 'play') return;
+  for (const t of G.towers) {
+    if (!t.alive || t.kind !== 'crypt' || t.state !== 'active' || t.stun > 0) continue;
+    const d = t.def, l = t.lvl, r = t.range; if (dist2(t.x, t.z, m.x, m.z) > r * r) continue;
+    if (t.men.filter(f => !f.gone).length >= d.cap[l] || rnd() > d.chance[l]) return;
+    raiseAlly(t, m); return;
+  }
+}
+function raiseAlly(t, m) {
+  const d = t.def, l = t.lvl, used = t.men.map(f => f.slot); let slot = 0; while (used.includes(slot)) slot++;
+  const f = {
+    isMan: true, raised: true, type: m.type, tower: t, slot, x: m.x, y: m.y, z: m.z, yaw: m.yaw + PI, ph: 0, mv: 0, atk: -1, flinch: 0, flash: 1, hp: d.hp[l], maxHp: d.hp[l], dmg: d.dmg[l],
+    rad: .26, mass: 7, s: m.s, lat: m.lat, onRoad: true, state: 'ready', target: null, cd: .8, torch: false, gone: false, dead: false, vf: 0, scale: m.def.scale,
+    struck: false, alive: true, lI: 0, lx: 0, ly: 0, lz: 0, lseed: rnd() * 9, flame: null, leave: false, lvlUp: false, weapon: null, shield: null, age: 0, foes: 0, tint: [.55, 1.6, .75],
+  };
+  t.men.push(f); G.men.push(f);
+  fxTimed(4, m.x, m.y + .08, m.z, 2.2, 2.2, .3, 1.6, .6, .7, .6, { ground: true }); fxDust(m.x, m.y + .1, m.z, 5, .6, { a: .4, c: [.2, .4, .25] });
+  for (let i = 0; i < 8; i++) fxPart(m.x + rr(-.3, .3), m.y + rr(.1, 1.2), m.z + rr(-.3, .3), 0, rr(.6, 1.4), 0, rr(.4, .8), .06, .5, 2.2, .8, { drag: .8, rise: .4 });
+  sfx('ignite', m.x, m.z, .6, .2);
 }
 
 const SKEL_EYE = [.058, .185, .152, .07], OGRE_EYE = [.055, .125, .15, .06], BUG_EYE = [.05, .055, .19, .035];
@@ -3495,15 +3726,22 @@ const RIGS = {
   king(m) { m.weapon = KIT.item.khopesh; m.wScale = 1.25; m.heavy = true; m.crown = true; m.wraps = true; return rigHuman(KIT.giant, SPEC.skel, m); },
   spider: rigSpider, scarab: rigSpider, brood: rigSpider, queen: rigSpider, wolf: rigWolf, wraith: rigWraith, toad: rigToad, wisp: rigWisp,
   gargoyle: m => rigBat(m, KIT.garg, .1, .06),
+  thief(m) { m.weapon = KIT.item.sword; m.wScale = .8; m.hood = true; return rigHuman(KIT.skel, SPEC.skel, m); },
+  shieldskel(m) { m.weapon = KIT.item.sword; m.shield = KIT.item.shieldR; m.helm = true; m.plate = true; return rigHuman(KIT.skel, SPEC.skel, m); },
+  priest(m) { m.weapon = KIT.item.staff; m.staff = true; m.hood = true; m.robe = true; return rigHuman(KIT.skel, SPEC.skel, m); },
+  ram(m) { m.weapon = KIT.item.club; m.wScale = 1.35; m.heavy = true; return rigHuman(KIT.ogre, SPEC.ogre, m); },
+  arcgolem(m) { m.heavy = true; return rigHuman(KIT.golem, SPEC.golem, m); },
+  fireel: m => rigWraith(m), iceel: m => rigWraith(m), vampire: m => rigBat(m, KIT.garg, .1, .06),
 };
 function rigMonster(m) { return RIGS[m.type](m); }
 const EYES = {
   skel: SKEL_EYE, knight: SKEL_EYE, giant: [.058, .185, .152, .075], ogre: OGRE_EYE, rat: [.05, .03, .42, .05], bat: [.04, .03, .16, .05], slime: [.13, .2, .44, .08], slimelet: [.13, .2, .44, .08],
   ghoul: OGRE_EYE, brute: OGRE_EYE, jotun: OGRE_EYE, golem: [.04, .1, .17, .05], colossus: [.04, .1, .17, .05], necro: SKEL_EYE, drummer: SKEL_EYE, bomber: SKEL_EYE, mummy: SKEL_EYE, king: [.058, .185, .152, .075],
   spider: BUG_EYE, scarab: BUG_EYE, brood: [.05, .055, .19, .022], queen: [.05, .055, .19, .016], wolf: [.05, .27, .63, .04], wraith: [.045, 1.04, .17, .055], toad: [.125, .345, .285, .035], gargoyle: [.045, .15, .28, .045], wisp: null,
+  thief: SKEL_EYE, shieldskel: SKEL_EYE, priest: SKEL_EYE, ram: OGRE_EYE, arcgolem: [.04, .1, .17, .05], fireel: [.045, 1.04, .17, .055], iceel: [.045, 1.04, .17, .055], vampire: [.045, .15, .28, .045],
 };
 function drawMonster(m, t) {
-  const M = rigMonster(m), ey = EYES[m.type], c = m.def.eye, sc = m.scale, tw = .8 + .2 * Math.sin(t * 9 + m.lseed * 7), ty = m.type;
+  const M = (() => { const t0 = m.tint; if (m.frozen > 0) m.tint = [.7, 1.2, 2.2]; const r = rigMonster(m); m.tint = t0; return r; })(), ey = EYES[m.type], c = m.def.eye, sc = m.scale, tw = .8 + .2 * Math.sin(t * 9 + m.lseed * 7), ty = m.type;
   if (ey) {
     for (const sg of [-1, 1]) { _tv.set(sg * ey[0], ey[1], ey[2]).applyMatrix4(M); FX.add.push(_tv.x, _tv.y, _tv.z, ey[3] * sc * 1.5, ey[3] * sc * 1.5, 0, 0, c[0], c[1], c[2], tw, 0, 0, 0, 0); }
     _tv.set(0, ey[1], ey[2]).applyMatrix4(M); FX.add.push(_tv.x, _tv.y, _tv.z, ey[3] * sc * 9, ey[3] * sc * 9, 0, 0, c[0] * .3, c[1] * .3, c[2] * .3, .5 * tw, 2, 0, 0, 0);
@@ -3514,6 +3752,12 @@ function drawMonster(m, t) {
   else if (ty === 'colossus' && rnd() < (m.rage ? .5 : .12)) fxPart(m.x + rr(-.7, .7), m.y + rr(.6, 3), m.z + rr(-.7, .7), rr(-.3, .3), rr(.6, 1.8), rr(-.3, .3), rr(.6, 1.2), rr(.05, .08), 2.6, .9, .15, { drag: .3, wob: 1, rise: .3 });
   if (m.torch && m.flame) { const p = RIGOUT.torch; m.flame.x = p.x; m.flame.y = p.y; m.flame.z = p.z; m.lx = p.x; m.ly = p.y + .2; m.lz = p.z; }
   if (m.slowT > 0 && rnd() < .2) { const a = rnd() * TAU; fxBolt([m.x, m.y + m.hitH, m.z], [m.x + Math.cos(a) * m.rad * 1.4, m.y + m.hitH + rr(-.3, .4), m.z + Math.sin(a) * m.rad * 1.4], .08, [.4, .65, 1.3], .028); }
+  if (m.burnT > 0 && rnd() < .6) fxPart(m.x + rr(-.2, .2), m.y + rr(.2, 1) * (m.hitH + .4), m.z + rr(-.2, .2), rr(-.2, .2), rr(.8, 1.6), rr(-.2, .2), rr(.3, .6), rr(.05, .08), 2.6, 1.1, .25, { drag: .5, rise: .5 });
+  if (m.frozen > 0) FX.add.push(m.x, m.y + m.hitH + .3, m.z, 1.5 * sc, 1.8 * sc, 0, 0, .35, .7, 1.4, .35, 2, 0, 0, 0);
+  if (m.elite) FX.add.push(m.x, m.y + .08, m.z, m.rad * 6, m.rad * 6, 0, 0, 1.8, 1.1, .3, .4 + .2 * Math.sin(t * 5), 4, 0, .52, 1);
+  if (ty === 'fireel') { FX.add.push(m.x, m.y + .8, m.z, 2.2, 2.4, 0, 0, 1.4, .5, .12, .3, 2, 0, 0, 0); if (rnd() < .7) fxPart(m.x + rr(-.25, .25), m.y + rr(.2, 1.3), m.z + rr(-.25, .25), 0, rr(.8, 1.6), 0, rr(.3, .6), rr(.05, .09), 2.8, 1.1, .2, { drag: .5, rise: .6 }); }
+  if (ty === 'iceel') { FX.add.push(m.x, m.y + .8, m.z, 2.2, 2.4, 0, 0, .3, .7, 1.5, .28, 2, 0, 0, 0); if (rnd() < .35) fxPart(m.x + rr(-.3, .3), m.y + rr(.2, 1.3), m.z + rr(-.3, .3), 0, rr(-.4, .2), 0, rr(.5, .9), .05, .9, 1.4, 2.3, { drag: 1 }); }
+  if (ty === 'priest' && rnd() < .2) fxPart(m.x + rr(-.3, .3), m.y + rr(.4, 1.6), m.z + rr(-.3, .3), 0, rr(.3, .7), 0, rr(.5, .9), .05, .5, 1.8, .5, { drag: .6 });
   if (m.vis || m.fly) G.hbars.push({ x: m.x, y: m.y + m.def.top * sc / m.def.scale + .22, z: m.z, f: sat(m.hp / m.maxHp), boss: !!m.def.boss, man: false, name: m.def.boss ? m.def.name : null });
 }
 
@@ -3530,8 +3774,9 @@ function spawnFootman(tower) {
 }
 function killFootman(f, dx, dz) {
   f.dead = true; f.alive = false; f.gone = true; if (f.flame) { fxEmbers(f.flame.x, f.flame.y, f.flame.z, 6, .1); removeFlame(f.flame); f.flame = null; }
-  f.weapon = KIT.item.blade; if (!f.torch) f.shield = KIT.item.shieldH;
-  shatter(e => rigHuman(KIT.foot, SPEC.foot, e), f, [(dx || 0) * 1.6, .8, (dz || 0) * 1.6], { spread: .9, life: .8 });
+  if (f.raised) { shatter(e => RIGS[f.type](e), f, [(dx || 0) * 1.6, .8, (dz || 0) * 1.6], { spread: .9, life: .8 }); fxTimed(5, f.x, f.y + .8, f.z, 1.8, 1.8, .3, 1.4, .6, .7, .25); }
+  else { f.weapon = KIT.item.blade; if (!f.torch) f.shield = KIT.item.shieldH;
+  shatter(e => rigHuman(KIT.foot, SPEC.foot, e), f, [(dx || 0) * 1.6, .8, (dz || 0) * 1.6], { spread: .9, life: .8 }); }
   fxDust(f.x, f.y + .1, f.z, 3, .5, { a: .35 }); sfx('footmanDie', f.x, f.z, .8);
 }
 function slotPos(f, out) {
@@ -3541,6 +3786,7 @@ function slotPos(f, out) {
 const _fp = { x: 0, y: 0, z: 0, tx: 0, tz: 0 };
 function footmanThink(f, dt) {
   const B = G.B, tw = f.tower; f.age += dt;
+  if (f.raised) { f.hp -= f.maxHp * .03 * dt; if (f.hp <= 0) { killFootman(f, 0, 0); return; } }
   if (f.lvlUp) { f.lvlUp = false; const d = tw.def, r = f.hp / f.maxHp; f.maxHp = d.hp[tw.lvl]; f.hp = f.maxHp * Math.max(r, .6); f.dmg = d.dmg[tw.lvl]; f.scale = .9 + tw.lvl * .05; }
   if (!tw.alive) f.leave = true;
   let gx, gz, face = null, speed = 2.1, fighting = false;
@@ -3593,8 +3839,9 @@ function strike(a, b, dmg, byMan) {
   }
 }
 function drawFootman(f) {
-  f.weapon = KIT.item.blade; f.shield = f.torch ? null : KIT.item.shieldH; f.wScale = 1;
-  rigHuman(KIT.foot, SPEC.foot, f);
+  if (f.raised) { RIGS[f.type](f); FX.add.push(f.x, f.y + .8 * f.scale, f.z, 1.7, 1.9, 0, 0, .25, .9, .35, .28, 2, 0, 0, 0); if (rnd() < .15) fxPart(f.x + rr(-.2, .2), f.y + rr(.3, 1.2), f.z + rr(-.2, .2), 0, rr(.4, .8), 0, rr(.4, .7), .05, .5, 2, .7, { drag: .8 }); }
+  else { f.weapon = KIT.item.blade; f.shield = f.torch ? null : KIT.item.shieldH; f.wScale = 1;
+  rigHuman(KIT.foot, SPEC.foot, f); }
   if (f.torch && f.flame) { const p = RIGOUT.torch; f.flame.x = p.x; f.flame.y = p.y; f.flame.z = p.z; f.lx = p.x; f.ly = p.y + .2; f.lz = p.z; }
   if (f.hp < f.maxHp) G.hbars.push({ x: f.x, y: f.y + 1.55 * f.scale, z: f.z, f: sat(f.hp / f.maxHp), boss: false, man: true });
 }
@@ -3604,14 +3851,19 @@ function updateUnits(dt) {
   const B = G.B, mons = G.mons, men = G.men, L = B.L, maxLatBase = ROAD_HALF + .04;
   for (let i = men.length - 1; i >= 0; i--) { const f = men[i]; if (f.gone) { swapRemove(men, i); continue; } footmanThink(f, dt); if (f.gone) swapRemove(men, i); }
   _units.length = 0;
-  for (const m of mons) { m.haste = 0; if (!m.dead && !m.fly && !m.def.ghost) _units.push(m); }
+  for (const m of mons) { m.haste = 0; m.ward = 0; if (!m.dead && !m.fly && !m.def.ghost) _units.push(m); }
   for (const d of mons) if (!d.dead && d.def.aura && d.vis && !d.dying) for (const m of mons) if (m !== d && !m.dead && !m.fly && !m.def.boss && Math.abs(m.s - d.s) < d.def.aura[0]) m.haste = d.def.aura[1];
+  for (const d of mons) { const dd = d.def; if (d.dead || !d.vis || d.dying || !(dd.ward || dd.heal)) continue; const rr2 = (dd.ward || dd.heal)[0];
+    for (const m of mons) { if (m === d || m.dead || m.def.boss || Math.abs(m.s - d.s) > rr2) continue; if (dd.ward && !m.fly) m.ward = dd.ward[1]; if (dd.heal && m.hp < m.maxHp) m.hp = Math.min(m.maxHp, m.hp + m.maxHp * dd.heal[1] * dt); } }
   for (const f of men) if (!f.dead && f.onRoad) _units.push(f);
   const U = _units, nu = U.length;
   for (const m of mons) {
     if (m.dead) continue;
     m.flash = Math.max(0, m.flash - dt * 7); m.flinch = Math.max(0, m.flinch - dt * 4.2);
     if (m.slowT > 0) { m.slowT -= dt; if (m.slowT <= 0) m.slowF = 0; }
+    if (m.frozen > 0) m.frozen -= dt;
+    if (m.burnT > 0 && !(m.dying > 0)) { m.burnT -= dt; m.hp -= m.burnD * dt; if (m.burnBy) m.burnBy.dealt += m.burnD * dt; if (m.hp <= 0) { killMonster(m, 'burn', 0, 0, m.burnBy); continue; } }
+    if ((m.def.heal || m.def.ward) && m.vis) { const b0 = m.beat; m.beat += dt * 4.5; if (Math.floor(m.beat / TAU) !== Math.floor(b0 / TAU)) { const r = (m.def.heal || m.def.ward)[0]; if (m.def.heal) fxTimed(4, m.x, m.y + .08, m.z, r * 1.5, r * 1.5, .4, 1.5, .5, .25, .5, { ground: true }); else fxTimed(4, m.x, m.y + .08, m.z, r * 1.5, r * 1.5, .5, .7, 1.5, .22, .5, { ground: true }); } }
     if (m.fly) { updateBat(m, dt); continue; }
     const def = m.def, maxLat = Math.max(0, maxLatBase - m.rad * .7);
     if (m.dying > 0) {
@@ -3622,7 +3874,7 @@ function updateUnits(dt) {
     if (m.foe && (m.foe.dead || m.foe.gone)) m.foe = null;
     if (def.explode && m.foe) { m.hp = 0; killMonster(m, 'blast', 0, 0, null); continue; }
     if (def.regen && m.hp < m.maxHp && G.t - m.hitAt > 2.2) m.hp = Math.min(m.maxHp, m.hp + m.maxHp * def.regen * dt);
-    if (def.ghost) { m.gT = (m.gT + dt) % (def.ghost[0] + def.ghost[1]); m.eth = m.gT < def.ghost[0]; }
+    if (def.ghost) { m.gT = (m.gT + dt) % (def.ghost[0] + def.ghost[1]); m.eth = m.gT < def.ghost[0] && !shrineNear(m); }
     if (def.aura) { const b0 = m.beat; m.beat += dt * 7.5; if (m.vis && Math.floor(m.beat / TAU) !== Math.floor(b0 / TAU)) fxTimed(4, m.x, m.y + .08, m.z, def.aura[0] * 1.5, def.aura[0] * 1.5, 1.4, .5, .2, .22, .5, { ground: true }); }
     if (m.cast > 0) m.cast = Math.max(0, m.cast - dt * 1.1);
     if (def.summon && m.vis) {
@@ -3640,7 +3892,15 @@ function updateUnits(dt) {
         for (const tw of G.towers) if (tw.alive && tw.state === 'active' && dist2(tw.x, tw.z, m.x, m.z) < sp.r * sp.r) { tw.stun = sp.stun; fxTimed(5, tw.x, tw.y + 2, tw.z, 3, 3, .6, 1.2, 2.4, .9, .3); }
       }
     }
-    let want = def.spd * m.spdMul * (1 - m.slowF) * (1 + m.haste), hopMul = 1;
+    if (def.ram && m.vis && !(m.frozen > 0)) {
+      m.stT -= dt;
+      if (m.stT <= 0) {
+        m.stT = def.ram.every; let hit = false;
+        for (const tw of G.towers) if (tw.alive && tw.state === 'active' && dist2(tw.x, tw.z, m.x, m.z) < def.ram.r * def.ram.r) { tw.stun = Math.max(tw.stun || 0, def.ram.stun); hit = true; fxTimed(5, tw.x, tw.y + 2, tw.z, 3, 3, .6, 1.2, 2.4, .9, .3); fxDust(tw.x, tw.y + .2, tw.z, 6, 1, { speed: 2 }); }
+        if (hit) { m.cast = 1; sfx('bossStep', m.x, m.z, .8, 1); sfx('hammer', m.x, m.z, .9, .2); FX.shake = Math.min(1, FX.shake + .3); fxTimed(4, m.x, m.y + .08, m.z, def.ram.r * 2, def.ram.r * 2, 1.2, .7, .3, .5, .5, { ground: true }); }
+      }
+    }
+    let want = def.spd * m.spdMul * (1 - m.slowF) * (1 + m.haste) * (m.frozen > 0 ? 0 : 1), hopMul = 1;
     if (def.frenzy) want *= 1 + def.frenzy * (1 - m.hp / m.maxHp);
     if (def.enrage && m.hp < m.maxHp * def.enrage[0]) { want *= def.enrage[1]; if (!m.rage) { m.rage = true; sfx('roar', m.x, m.z, 1, .9); fxEmbers(m.x, m.y + 2, m.z, 40, 1.2); FX.shake = Math.min(1.2, FX.shake + .6); } }
     if (def.hop) { if (!m.foe) m.hop = (m.hop + dt * def.hop[0] * (1 - m.slowF * .6)) % 1; hopMul = (m.hop > .22 && m.hop < .62) ? def.hop[1] : .1; }
@@ -3677,7 +3937,7 @@ function updateUnits(dt) {
       m.atk += dt / def.atkT * 1.7;
       if (m.atk >= .5 && !m.struck) { m.struck = true; const f = m.foe; if (f && !f.dead && Math.hypot(f.x - m.x, f.z - m.z) < m.rad + f.rad + (def.boss ? 1.4 : .8)) strike(m, f, def.dmg * G.dmgMul, false); }
       if (m.atk >= 1) { m.atk = -1; m.cd = def.atkT * rr(.35, .5); }
-    } else if (m.foe && m.cd <= 0) { m.atk = 0; m.struck = false; if (def.boss) sfx('roar', m.x, m.z, .5, .7); }
+    } else if (m.foe && m.cd <= 0 && !(m.frozen > 0)) { m.atk = 0; m.struck = false; if (def.boss) sfx('roar', m.x, m.z, .5, .7); }
     if (def.boss && v > .05) { const st = Math.floor(m.ph / PI); if (st !== m.step) { m.step = st; const p = pathAt(B, m.s, _ap), sd = (st & 1) ? 1 : -1; const fxp = m.x - p.tz * sd * .5, fzp = m.z + p.tx * sd * .5; fxDust(fxp, m.y + .05, fzp, 7, 1.0, { speed: 2.2 }); FX.shake = Math.min(1.1, FX.shake + .4); sfx('bossStep', m.x, m.z, 1, .6); FX.decals.add(B.heightAt, fxp, fzp, .55, .02, .017, .015, .5, 9); } }
     if (m.s >= L - .35) { leak(m); continue; }
   }
@@ -3723,6 +3983,7 @@ function updateBat(m, dt) {
 }
 function leak(m) {
   const B = G.B, n = m.def.lives;
+  if (m.def.steal) { G.gold = Math.max(0, G.gold - m.def.steal); UI.goldShown = Math.min(UI.goldShown, G.gold); UI.deny = 1; }
   G.lives = Math.max(0, G.lives - n); G.leaks++; G.waveLeaks++; G.leakTypes[m.type] = (G.leakTypes[m.type] || 0) + n;
   LT.beaconGutter = 1; UI.hurt = 1;
   if (m.fly) { fxSparks(m.x, m.y, m.z, 14, 5, 3, 1.4, .4); fxSmoke(m.x, m.y, m.z, 0, 1, 0, 1.2, .5, .8, .2, .2, .2, .6); }
@@ -3738,52 +3999,55 @@ Object.assign(G, {
   queue: [], waveT: 0, nextIn: 0, spawning: false, bossWave: false, bossAlive: false, k: 0, phaseT: 0, banner: null, started: false, timeScale: 1, trickle: 0, clearT: 0, paused: false, speed: 1, best: 0, seen: {},
 });
 
-function waveNumber() { return G.level * 5 + (G.phase === 'rise' ? 1 : Math.max(1, G.k)); }
+const WPL = 8, ELITE_K = 4, WAVE_GAP = 15, PREP_T = 25;
+function waveNumber() { return G.level * WPL + (G.phase === 'rise' ? 1 : Math.max(1, G.k)); }
 const ROSTER = {
   skel: [4, 3, 6, .5, 1, 5], rat: [1.7, 5, 9, .2, 2, 3], bat: [4.2, 3, 5, .35, 2, 1.3], ghoul: [5.5, 2, 4, .4, 2, 2],
   slime: [9.5, 1, 3, .9, 3, 2], spider: [3, 3, 6, .25, 3, 2], scarab: [1.9, 5, 8, .18, 2, 0], knight: [12.5, 1, 3, .5, 4, 2], wolf: [5.5, 2, 4, .35, 4, 1.6], bomber: [6, 1, 2, .8, 4, 1.2],
   wraith: [9, 1, 3, .7, 5, 1.4], toad: [8, 1, 3, .7, 5, .7], wisp: [2.6, 4, 7, .22, 5, .8], drummer: [13, 1, 1, 1, 6, .9], gargoyle: [11, 1, 3, .6, 6, .9],
   necro: [18, 1, 1, 1.2, 7, .9], mummy: [15, 1, 2, .9, 7, .9], brute: [32, 1, 1, 2, 8, .7], golem: [40, 1, 1, 2, 8, .7], brood: [30, 1, 1, 2, 9, .6],
+  thief: [7, 1, 3, .5, 3, 1.1], fireel: [9, 1, 3, .6, 4, 1.1], iceel: [10, 1, 3, .6, 5, 1], shieldskel: [14, 1, 2, .8, 5, 1], priest: [15, 1, 1, 1, 6, .9], vampire: [14, 1, 2, .9, 6, .8], ram: [28, 1, 1, 1.6, 8, .7], arcgolem: [34, 1, 1, 2, 9, .6],
 };
 function waveMenu(k, level) {
-  const w = level * 5 + k, bio = G.B.bio, menu = [];
+  const w = (level * WPL + k) * 5 / WPL, bio = G.B.bio, menu = [];
   for (const ty in ROSTER) {
     const r = ROSTER[ty], mul = bio.mobs[ty] === undefined ? 1 : bio.mobs[ty], un = Math.min(r[4], bio.early[ty] || 99), wt = r[5] ? r[5] * mul : (bio.mobs[ty] || 0);
-    if (w >= un && wt > 0) menu.push([ty, wt * (w === un && w > 1 ? 2.2 : 1)]);
+    if (w >= un && wt > 0) menu.push([ty, wt * (w - un < 5 / WPL && w > 1 ? 2.2 : 1)]);
   }
   return menu;
 }
 function bossType() { const b = G.B.bio.boss; return b[Math.floor(G.level / BIOMES.length) % b.length]; }
 function buildWave(k, level) {
-  const q = [], boss = k === 5, lv = 1 + .25 * level;
-  let budget = (34 + 25 * (k - 1)) * lv * G.press * (boss ? .7 : 1), heavy = 0, air = budget * .42;
-  const hpMul = (1 + .13 * (k - 1)) * (1 + .27 * level) * (.85 + .15 * G.press);
+  const q = [], boss = k === WPL, lv = 1 + .25 * level, ke = 1 + (k - 1) * 4 / (WPL - 1);
+  let budget = (34 + 25 * (ke - 1)) * lv * G.press * (boss ? .7 : 1), heavy = 0, air = budget * .42;
+  const hpMul = (1 + .13 * (ke - 1)) * (1 + .27 * level) * (.85 + .15 * G.press);
   const menu = waveMenu(k, level), tot = menu.reduce((a, b) => a + b[1], 0);
   let t = .6;
   if (boss) q.push({ t: 2.2, type: bossType(), hpMul: (1 + .4 * level) * Math.pow(G.press, .4) });
+  if (k === ELITE_K) { const hv = menu.filter(e => ROSTER[e[0]][0] >= 9 && ROSTER[e[0]][0] < 30 && !MON[e[0]].fly); if (hv.length) for (let i = 0; i < 2 + level; i++) { q.push({ t: 2 + i * 2.6, type: hv[Math.floor(rnd() * hv.length)][0], hpMul: hpMul * 1.7, elite: true }); budget -= 14; } }
   while (budget > 0) {
     let r = rnd() * tot, type = 'skel'; for (const [ty, w] of menu) { r -= w; if (r <= 0) { type = ty; break; } }
     let R = ROSTER[type];
     if (R[0] > budget + 5 || (R[0] >= 30 && heavy >= 1 + (level >> 1)) || (MON[type].fly && air <= 0)) { type = 'skel'; R = ROSTER.skel; }
     if (R[0] >= 30) heavy++;
-    const n = Math.floor(rr(R[1], R[2] + .999)), gap = R[3];
+    const n = Math.floor(rr(R[1], R[2] + .999)), gap = R[3] * 1.35;
     for (let i = 0; i < n && budget > 0; i++) { q.push({ t, type, hpMul }); t += gap * rr(.8, 1.25); budget -= R[0]; if (MON[type].fly) air -= R[0]; }
-    t += rr(1.1, 2.3) * (boss ? 1.5 : 1);
+    t += rr(1.6, 3.0) * (boss ? 1.5 : 1);
   }
   q.sort((a, b) => a.t - b.t);
   return q;
 }
 function startWave() {
-  G.k = G.k % 5 + 1; G.queue = buildWave(G.k, G.level); if (waveNumber() > G.best) { G.best = waveNumber(); try { localStorage.setItem('cinderwatch.best', '' + G.best); } catch (e) {} } G.waveT = 0; G.spawning = true; G.bossWave = G.k === 5; G.waveKills = 0; G.waveLeaks = 0; G.bossDown = false; G.trickle = 6; G.trickleN = 0;
+  G.k = G.k % WPL + 1; G.queue = G.nextQueue || buildWave(G.k, G.level); G.nextQueue = null; if (waveNumber() > G.best) { G.best = waveNumber(); try { localStorage.setItem('cinderwatch.best', '' + G.best); } catch (e) {} } G.waveT = 0; G.spawning = true; G.bossWave = G.k === WPL; G.waveKills = 0; G.waveLeaks = 0; G.bossDown = false; G.trickle = 6; G.trickleN = 0;
   sfx(G.bossWave ? 'hornBoss' : 'horn', G.B.cave.x, G.B.cave.z, 1.1);
-  UI.banner(G.bossWave ? '第 ' + waveNumber() + ' 波 · ' + MON[bossType()].name : '第 ' + waveNumber() + ' 波', G.bossWave ? 3.6 : 2.2, G.bossWave);
+  UI.banner(G.bossWave ? '第 ' + waveNumber() + ' 波 · ' + MON[bossType()].name : '第 ' + waveNumber() + ' 波' + (G.k === ELITE_K ? ' · 精英来袭' : ''), G.bossWave ? 3.6 : 2.2, G.bossWave);
 }
 function endWave() {
   const l = G.waveLeaks;
   if (l === 0) G.press *= 1.17; else if (l >= 6) G.press *= .8; else if (l >= 3) G.press *= .9;
   if (G.lives <= 6) G.press *= .9;
   G.press = clamp(G.press, .6, 2.2);
-  G.gold += 24 + 9 * G.k + 10 * G.level;
+  G.gold += 20 + 6 * G.k + 10 * G.level;
 }
 function updateWaves(dt) {
   if (G.phase !== 'play') return;
@@ -3792,14 +4056,14 @@ function updateWaves(dt) {
     G.waveT += dt;
     while (G.queue.length && G.queue[0].t <= G.waveT) {
       if (G.mons.length > 84) break;
-      const e = G.queue.shift(); spawnMonster(e.type, { hpMul: e.hpMul });
+      const e = G.queue.shift(); spawnMonster(e.type, { hpMul: e.hpMul, elite: e.elite });
     }
     if (!G.queue.length) {
       G.bossAlive = G.mons.some(m => m.def.boss && !m.dead);
       if (G.bossWave && G.bossAlive) {
         G.trickle -= dt;
-        if (G.trickle <= 0 && G.trickleN < 9) { G.trickleN++; G.trickle = rr(3.2, 4.6); const tm = waveMenu(5, G.level).filter(e => ROSTER[e[0]][0] < 13), ty = tm[Math.floor(rnd() * tm.length)][0], n = Math.max(1, Math.min(5, Math.round(8 / ROSTER[ty][0]))), hpMul = (1 + .5) * (1 + .22 * G.level); for (let i = 0; i < n; i++) G.queue.push({ t: G.waveT + i * .4, type: ty, hpMul }); }
-      } else { G.spawning = false; endWave(); G.nextIn = G.bossWave ? -1 : 6.5; G.clearT = 0; }
+        if (G.trickle <= 0 && G.trickleN < 9) { G.trickleN++; G.trickle = rr(3.2, 4.6); const tm = waveMenu(WPL, G.level).filter(e => ROSTER[e[0]][0] < 13), ty = tm[Math.floor(rnd() * tm.length)][0], n = Math.max(1, Math.min(5, Math.round(8 / ROSTER[ty][0]))), hpMul = (1 + .5) * (1 + .22 * G.level); for (let i = 0; i < n; i++) G.queue.push({ t: G.waveT + i * .4, type: ty, hpMul }); }
+      } else { G.spawning = false; endWave(); G.nextIn = G.bossWave ? -1 : WAVE_GAP; G.nextMax = WAVE_GAP; G.clearT = 0; if (!G.bossWave) G.nextQueue = buildWave(G.k % WPL + 1, G.level); }
     }
   } else if (G.bossWave) {
     G.clearT += dt;
@@ -3810,7 +4074,7 @@ function updateWaves(dt) {
   }
   if (G.lives <= 0 && G.phase === 'play') setPhase('defeat');
 }
-function callWaveEarly() { if (G.phase === 'play' && !G.spawning && !G.bossWave && G.nextIn > .4) { G.gold += Math.round(G.nextIn * 3); G.nextIn = .05; return true; } return false; }
+function callWaveEarly() { if (G.phase === 'play' && !G.spawning && !G.bossWave && G.nextIn > .4) { G.gold += Math.round(G.nextIn * 2); G.nextIn = .05; return true; } return false; }
 
 function padCoverage(pad, range, air) {
   const B = G.B; let c = 0; const r2 = range * range;
@@ -3836,8 +4100,8 @@ function aiThink(dt) {
   if (G.phase !== 'play' || UI.playerActive()) return;
   AI.think -= dt; if (AI.think > 0) return; AI.think = .5;
   const B = G.B, towers = G.towers.filter(t => t.alive), empty = B.pads.filter(p => !p.tower), N = towers.length;
-  const cnt = { archer: 0, bombard: 0, spire: 0, guard: 0 }; for (const t of towers) cnt[t.kind]++;
-  const ideal = { archer: .36, bombard: .22, spire: .2, guard: .22 };
+  const cnt = {}; for (const k of TOWER_KINDS) cnt[k] = 0; for (const t of towers) cnt[t.kind]++;
+  const ideal = { archer: .22, bombard: .15, spire: .13, guard: .15, mage: .14, frost: .1, crypt: .06, shrine: .05 };
   const lt = G.leakTypes; let air = 0, armor = 0, swarm = 0; for (const ty in lt) { const c = MON[ty].cat; if (c === 'air') air += lt[ty]; else if (c === 'armor') armor += lt[ty]; else if (c === 'swarm') swarm += lt[ty]; }
   const gatePress = sat(G.leaks / 8);
   const opts = [];
@@ -3845,10 +4109,12 @@ function aiThink(dt) {
     const def = TOWER[kind];
     let need = ideal[kind] * (N + 1.6) - cnt[kind] + .35;
     if (kind === 'archer') need += air * .2 + (N === 0 ? 1 : 0); if (kind === 'spire') need += air * .12 + armor * .1; if (kind === 'bombard') need += armor * .08 + swarm * .06 + (N >= 2 && cnt.bombard === 0 ? .5 : 0); if (kind === 'guard') need += swarm * .04 + (N >= 1 && cnt.guard === 0 ? .9 : 0);
+    if (kind === 'mage') need += armor * .12 + air * .05; if (kind === 'frost') need += swarm * .05; if ((kind === 'crypt' || kind === 'shrine') && N < 4) need -= .6;
     if (need <= 0) continue;
     for (const pad of empty) {
       const cov = padCoverage(pad, def.range[0]) / (def.range[0] * 2);
       let sc = need * (.55 + cov * .5);
+      if (kind === 'shrine') { let nb = 0; for (const t of towers) if (t.kind !== 'shrine' && Math.hypot(t.x - pad.x, t.z - pad.z) < def.range[0]) nb++; if (nb < 2) continue; sc = need * (.3 + nb * .25); }
       const rel = pad.s / B.L;
       if (N < 2) sc *= 1 - Math.abs(rel - .42) * .9;
       sc *= 1 + gatePress * (rel - .5) * .8;
@@ -3890,7 +4156,7 @@ function startCrumble() {
   const B = G.B;
   for (const m of G.mons) if (!m.dead) { shatter(e => rigMonster(e), m, [0, 1, 0], { spread: 1.2, life: 1 }); removeMonster(m); }
   for (const f of G.men) if (!f.dead) { f.weapon = KIT.item.blade; shatter(e => rigHuman(KIT.foot, SPEC.foot, e), f, [0, 1, 0], { spread: 1, life: 1 }); f.dead = f.gone = true; f.alive = false; if (f.flame) removeFlame(f.flame); }
-  G.mons.length = 0; G.men.length = 0; G.arrows.length = 0; G.shells.length = 0; G.stuck.length = 0;
+  G.mons.length = 0; G.men.length = 0; G.arrows.length = 0; G.shells.length = 0; G.stuck.length = 0; G.orbs.length = 0; G.zones.length = 0;
   for (const t of G.towers) {
     t.em.alive = false; LT.emitters[t.idx] = null; removeFlame(t.flame); removeFlame(t.flame2); t.flame = t.flame2 = null; t.archers.length = 0; t.alive = false; t.state = 'gone';
     let best = null, bd = 1e9; for (const p of B.pieces) if (p.kind === 'chunk') { const d = dist2(p.cx, p.cz, t.x, t.z); if (d < bd) { bd = d; best = p; } }
@@ -3921,9 +4187,10 @@ function activateBoard(B, lit) {
 }
 function beginBattle(first) {
   const B = G.B;
-  G.lives = G.maxLives; G.gold = 300 + 80 * G.level; G.bountyMul = 1 + .18 * G.level; G.dmgMul = 1.55 + .2 * G.level; G.press = lerp(G.press, 1, .5); UI.goldShown = G.gold; G.k = 0; G.leaks = 0; G.leakTypes = {}; G.spawning = false; G.bossWave = false; G.nextIn = first ? .9 : 1.6; G.queue = []; AI.think = .15; AI.wait = 0;
+  G.lives = G.maxLives; G.gold = 300 + 80 * G.level; G.bountyMul = 1 + .18 * G.level; G.dmgMul = 1.55 + .2 * G.level; G.press = lerp(G.press, 1, .5); UI.goldShown = G.gold; G.k = 0; G.leaks = 0; G.leakTypes = {}; G.spawning = false; G.bossWave = false; G.nextIn = G.nextMax = PREP_T; G.queue = []; G.nextQueue = null; AI.think = .15; AI.wait = 0;
   const n = 4 + Math.min(3, G.level);
   for (let i = 0; i < n; i++) spawnMonster(i === n - 1 && G.level > 0 ? 'knight' : 'skel', { s: B.cave.s + 2.2 + i * 1.15, lat: rr(-.7, .7), hpMul: 1 + .22 * G.level });
+  G.nextQueue = buildWave(1, G.level);
   G.phase = 'play'; G.phaseT = 0;
 }
 function updatePhase(dt) {
@@ -4195,6 +4462,7 @@ const PX = (() => {
     S: '#9aa3b0', s: '#5b6472', k: '#353b49',
     W: '#8a6a48', w: '#5a4330',
     o: '#0b0d14',
+    P: '#c49cff', p: '#6e4aa8', V: '#7dff9a', v: '#3c9a58',
   };
 
   const ICONS = {
@@ -4334,6 +4602,66 @@ const PX = (() => {
       '.o...sscs....',
       '......ss.....',
     ],
+    mage: [
+      '.....pPp.....',
+      '....pPYPp....',
+      '....PPPPP..P.',
+      '.P..pPPPp....',
+      '.....pPp.....',
+      '......W......',
+      '.....GWG.....',
+      '......W......',
+      '......W......',
+      '......W......',
+      '......w......',
+      '......w......',
+      '.....www.....',
+    ],
+    frost: [
+      '......C......',
+      '...C..C..C...',
+      '....C.C.C....',
+      '.....CCC.....',
+      '..C..cCc..C..',
+      '...CCcBcCC...',
+      'CCCCCBBBCCCCC',
+      '...CCcBcCC...',
+      '..C..cCc..C..',
+      '.....CCC.....',
+      '....C.C.C....',
+      '...C..C..C...',
+      '......C......',
+    ],
+    crypt: [
+      '..V.......V..',
+      '.VvV.....VvV.',
+      '.vVv.....vVv.',
+      '...ooooooo...',
+      '..oBBBBBBBo..',
+      '.oBBBBBBBBBo.',
+      '.oBooBBBooBo.',
+      '.oBoVBBBoVBo.',
+      '.oBBBBoBBBbo.',
+      '..oBBBBBBbo..',
+      '...oBoBoBo...',
+      '...obobobo...',
+      '....ooooo....',
+    ],
+    shrine: [
+      '......Y......',
+      '..Y...E...Y..',
+      '.....EYE.....',
+      '....EYYYE....',
+      '...EYYBYYE...',
+      'Y..EYBBBYE..Y',
+      '....eEEEe....',
+      '..GGGGGGGGG..',
+      '...SsSsSsS...',
+      '...S.S.S.S...',
+      '...S.S.S.S...',
+      '..sssssssss..',
+      '.kkkkkkkkkkk.',
+    ],
     upgrade: [
       '....Y....',
       '...YGG...',
@@ -4467,6 +4795,11 @@ const UI = (() => {
     c.fillStyle = o.bd || COLR.bd; c.fillRect(x + s, y, w - 2 * s, h); c.fillRect(x, y + s, w, h - 2 * s);
     c.fillStyle = o.bg || COLR.bg; c.fillRect(x + 2 * s, y + s, w - 4 * s, h - 2 * s); c.fillRect(x + s, y + 2 * s, w - 2 * s, h - 4 * s);
     if (o.hi) { c.fillStyle = o.hi; c.fillRect(x + 2 * s, y + s, w - 4 * s, s); }
+    if (h > 8 * s && w > 8 * s) {
+      c.fillStyle = 'rgba(255,214,150,0.045)'; c.fillRect(x + 2 * s, y + 2 * s, w - 4 * s, Math.round((h - 4 * s) * .45));
+      c.fillStyle = o.bd === COLR.bdHi || o.bd === COLR.ember ? '#ffd98a' : '#9a7a48';
+      for (const [ax, ay] of [[x + 2 * s, y + 2 * s], [x + w - 3 * s, y + 2 * s], [x + 2 * s, y + h - 3 * s], [x + w - 3 * s, y + h - 3 * s]]) c.fillRect(ax, ay, s, s);
+    }
   }
   function text(str, x, y, col, o) { return PX.text(U.ctx, str, x, y, U.s, col || COLR.tx, o); }
   const tw = str => PX.measure(str) * U.s;
@@ -4530,7 +4863,7 @@ const UI = (() => {
       if (PAN[e.code] && !e.ctrlKey && !e.metaKey && !e.altKey) { U.keys.add(e.code); e.preventDefault(); }
       if (e.repeat) return; audioGesture(); U.keepAwake(); U.touch = false;
       const k = e.key;
-      if (k >= '1' && k <= '4') { pickKind(TOWER_KINDS[+k - 1]); e.preventDefault(); }
+      if (k >= '1' && k <= '8') { pickKind(TOWER_KINDS[+k - 1]); e.preventDefault(); }
       else if (k === ' ' || k === 'Enter') { callWave(); e.preventDefault(); }
       else if (k === 'Escape') { U.closeMenu(); }
       else if (k === 'u' || k === 'U') { const t = (U.menu && U.menu.tower) || (U.hover && U.hover.tower); if (t) { touchInput(); doUpgrade(t); } }
@@ -4699,7 +5032,7 @@ const UI = (() => {
     }
     const wn = '第 ' + Math.max(1, waveNumber()) + ' 波', callable = G.phase === 'play' && !G.spawning && !G.bossWave && G.nextIn > .4;
     let sub, frac = -1;
-    if (G.phase === 'play') { if (!G.spawning && !G.bossWave && G.nextIn > 0) { sub = callable && (tch || over(U.waveRect ? U.waveRect.x : -1, U.waveRect ? U.waveRect.y : -1, U.waveRect ? U.waveRect.w : 0, U.waveRect ? U.waveRect.h : 0)) ? (tch ? '点击召唤 · +' : '立即召唤 · +') + Math.round(G.nextIn * 3) : '下一波还有 ' + Math.ceil(G.nextIn); frac = 1 - G.nextIn / 6.5; } else { const n = G.mons.length + G.queue.length; sub = n + ' 个敌人在路上'; } }
+    if (G.phase === 'play') { if (!G.spawning && !G.bossWave && G.nextIn > 0) { sub = callable && (tch || over(U.waveRect ? U.waveRect.x : -1, U.waveRect ? U.waveRect.y : -1, U.waveRect ? U.waveRect.w : 0, U.waveRect ? U.waveRect.h : 0)) ? (tch ? '点击召唤 · +' : '立即召唤 · +') + Math.round(G.nextIn * 3) : '下一波还有 ' + Math.ceil(G.nextIn); frac = 1 - G.nextIn / (G.nextMax || 15); } else { const n = G.mons.length + G.queue.length; sub = n + ' 个敌人在路上'; } }
     else sub = G.phase === 'defeat' ? '烽火已熄' : G.phase === 'clear' ? '首领已击败' : '新的关隘等待你';
     const bw = PX.iconSize('banner')[0] * s, wW = Math.max(bw + 3 * s + tw(wn), tw(sub), tw('下一波还有 0'), tw('点击召唤 · +00')) + pad * 2 + 4 * s, hW = LH * 2 + pad * 2 + s;
     const you = U.playerActive(), ct = you ? '你在指挥' : 'AI 指挥官', cs = tch ? (you ? '点击交给 AI' : '点击台座接管') : (you ? '点这里交给 AI' : '点击台座接管');
@@ -4716,6 +5049,18 @@ const UI = (() => {
     PX.icon(c, 'banner', tx0, yw + pad - s, s); text(wn, tx0 + bw + 3 * s, yw + pad, COLR.amber);
     text(sub, W / 2, yw + pad + LH + s, callable && (tch || hotW) ? COLR.tx : COLR.dim, { align: 'c' });
     if (frac >= 0) { c.fillStyle = '#2a2620'; c.fillRect(xw + 3 * s, yw + hW - 3 * s, wW - 6 * s, s); c.fillStyle = COLR.amber; c.fillRect(xw + 3 * s, yw + hW - 3 * s, Math.round((wW - 6 * s) * sat(frac)), s); }
+    if (G.phase === 'play' && !G.spawning && !G.bossWave && G.nextQueue && G.nextQueue.length && !U.menu) {
+      const cnt = {}; for (const e of G.nextQueue) cnt[e.type] = (cnt[e.type] || 0) + 1;
+      const ks = Object.keys(cnt).sort((a, b) => (MON[b].boss ? 99 : cnt[b]) - (MON[a].boss ? 99 : cnt[a])).slice(0, 6), nk = G.k % WPL + 1;
+      const head = '下一波' + (nk === WPL ? ' · 首领' : nk === ELITE_K ? ' · 精英' : '') + '：', rows = [];
+      for (let i = 0; i < ks.length; i += 2) rows.push(ks.slice(i, i + 2).map(k => MON[k].name + ' x' + cnt[k]).join('  '));
+      let wp = tw(head); for (const r2 of rows) wp = Math.max(wp, tw(r2)); wp += pad * 2;
+      const hp2 = LH * (rows.length + 1) + pad * 2 - s, xp = Math.round(W / 2 - wp / 2), yp = yw + hW + g3;
+      if (xp > x0 + 2 * s && xp + wp < Wr - 2 * s) {
+        c.globalAlpha = .92; plate(xp, yp, wp, hp2, { bd: nk === WPL ? COLR.ember : nk === ELITE_K ? COLR.bdHi : COLR.bd });
+        text(head, W / 2, yp + pad - s, nk === WPL ? COLR.ember : COLR.amber, { align: 'c' }); rows.forEach((r2, k) => text(r2, W / 2, yp + pad - s + (k + 1) * LH, COLR.tx, { align: 'c' })); c.globalAlpha = 1;
+      }
+    }
     const hotC = over(xc, yc, cW, hW); U.cmdRect = { id: 'cmd', x: xc, y: yc, w: cW, h: hW, hot: hotC, fn: toggleCommand, hud: true }; U.hud.push(U.cmdRect); if (hotC) U.hudHot = true;
     plate(xc, yc, cW, hW, hotC ? { bd: COLR.bdHi, bg: COLR.bg2 } : you ? { bd: COLR.bdHi } : {});
     PX.icon(c, ic, xc + pad, yc + pad - s, s); text(ct, xc + pad + icw + 3 * s, yc + pad, you ? COLR.amber : COLR.tx); text(cs, xc + pad, yc + pad + LH + s, COLR.dim);
@@ -4757,7 +5102,7 @@ const UI = (() => {
     } else {
       const first = U.titleT < 16, a = tch ? sat(Math.min(U.titleT - 7.2, first ? 1 : 3 - U.moved, U.manual && !first ? 0 : 1, 62 - U.titleT)) : sat(Math.min(U.titleT - 7.2, 3 - Math.min(U.moved, U.idle > 20 ? U.moved : 0) + (U.titleT < 18 ? 8 : 0)));
       if (a > .02 && !U.menu && !G.paused) {
-        const parts = tch ? ['点击台座建造', '拖动查看战场', '双指或双击缩放'] : ['点击台座建造', '1-4 选择防御塔', '空格键召唤下一波', '滚轮缩放，拖动移动视角'];
+        const parts = tch ? ['点击台座建造', '拖动查看战场', '双指或双击缩放'] : ['点击台座建造', '1-8 选择防御塔', '空格键召唤下一波', '滚轮缩放，拖动移动视角'];
         let lines = [parts.join(' · ')]; if (tw(lines[0]) + pad * 2 > boxW) { lines = parts.length > 3 ? [parts.slice(0, 2).join(' · '), parts.slice(2).join(' · ')] : parts; if (lines.some(l => tw(l) + pad * 2 > boxW)) lines = parts; }
         let w = 0; for (const l of lines) w = Math.max(w, tw(l)); w += pad * 2; const h = LH * lines.length + pad * 2 - s, hx = Math.round((iL + Wr - w) / 2), hy = yUp - h;
         if (w <= boxW) { c.globalAlpha = a; plate(hx, hy, w, h); lines.forEach((l, k) => text(l, hx + w / 2, hy + pad - s + k * LH, COLR.dim, { align: 'c' })); c.globalAlpha = 1; }
@@ -4785,16 +5130,16 @@ const UI = (() => {
       const place = (wP, hP) => { const below = p.y - hP - 7 * s < y0 + topH + 2 * s && p.y + 26 * s + hP < Hb - 4 * s; return [clamp(Math.round(p.x - wP / 2), 4 * s + iL, Wr - wP - 4 * s), below ? Math.round(p.y + 26 * s) : clamp(Math.round(p.y - hP - 7 * s), Math.min(y0 + topH + 4 * s, Hb - hP - 4 * s), Hb - hP - 4 * s)]; };
       c.globalAlpha = a;
       if (!m.tower) {
-        const bwid = 31 * s, bh = 35 * s, gapb = 3 * s, rowW = 4 * bwid + 3 * gapb;
-        let lit = null; const fk = U.gp.active ? TOWER_KINDS[m.focus % 4] : null;
-        const lines = k => k ? [TOWER[k].name].concat(TOWER[k].desc) : tch ? ['选择防御塔', '点选一座查看功能，', '再点一次即建造。'] : ['选择防御塔', '悬停或按 1-4', '查看各自的功能。'];
+        const bwid = 31 * s, bh = 35 * s, gapb = 3 * s, rowW = 4 * bwid + 3 * gapb, gridH = 2 * bh + gapb;
+        let lit = null; const fk = U.gp.active ? TOWER_KINDS[m.focus % TOWER_KINDS.length] : null;
+        const lines = k => k ? [TOWER[k].name].concat(TOWER[k].desc, [TOWER[k].vs || '']) : tch ? ['选择防御塔', '点选一座查看功能，', '再点一次即建造。', ''] : ['选择防御塔', '悬停或按 1-8', '查看各自的功能。', ''];
         let textW = tw('再点一次建造'); for (const k of [null].concat(TOWER_KINDS)) for (const l of lines(k)) textW = Math.max(textW, tw(l));
-        const wP = Math.max(rowW, textW) + mp * 2, hP = mp * 2 + LH + 3 * s + bh + 4 * s + LH * 3 + 2 * s + (tch ? LH + s : 0), [px, py] = place(wP, hP);
+        const wP = Math.max(rowW, textW) + mp * 2, hP = mp * 2 + LH + 3 * s + gridH + 4 * s + LH * 4 + 3 * s + (tch ? LH + s : 0), [px, py] = place(wP, hP);
         U.menuRect = { x: px, y: py, w: wP, h: hP };
         plate(px, py, wP, hP); text('在此建造', px + mp, py + mp - s, COLR.amber);
-        const bx0 = px + Math.round((wP - rowW) / 2), by = py + mp + LH + 3 * s;
+        const bx0 = px + Math.round((wP - rowW) / 2), by = py + mp + LH + 3 * s, byG = by;
         TOWER_KINDS.forEach((kind, i) => {
-          const d = TOWER[kind], can = G.gold >= d.cost[0], bx = bx0 + i * (bwid + gapb);
+          const by = byG + Math.floor(i / 4) * (bh + gapb), d = TOWER[kind], can = G.gold >= d.cost[0], bx = bx0 + (i % 4) * (bwid + gapb);
           const r = button(bx, by, bwid, bh, 'b' + kind, can, () => { if (U.touch && m.sel !== kind) { m.sel = kind; sfx('uiHover', m.pad.x, m.pad.z, .8); } else doBuild(m.pad, kind); }, kind, m.sel === kind);
           const [iw, ih] = PX.iconSize(d.icon); PX.icon(c, d.icon, bx + Math.round((bwid - iw * s) / 2), by + 6 * s + r.dy, s, can ? 1 : .45);
           if (!tch) text('' + (i + 1), bx + 3 * s, by + 2 * s + r.dy, COLR.dim);
@@ -4802,14 +5147,14 @@ const UI = (() => {
           PX.icon(c, 'coin', cx0, by + bh - LH - 3 * s + r.dy, s, can ? 1 : .5); text('' + d.cost[0], cx0 + 10 * s, by + bh - LH - 3 * s + r.dy, can ? COLR.amber : COLR.red);
           if (r.lit) lit = kind;
         });
-        const ls = lines(lit || fk), ty = by + bh + 4 * s;
-        text(ls[0], px + mp, ty, lit || fk ? COLR.tx : COLR.dim); text(ls[1], px + mp, ty + LH + s, COLR.dim); if (ls[2]) text(ls[2], px + mp, ty + LH * 2 + s, COLR.dim);
-        if (tch && m.sel) { const can = G.gold >= TOWER[m.sel].cost[0]; text(can ? '再点一次建造' : '金币不足', px + mp, ty + LH * 3 + 2 * s, can ? COLR.amber : COLR.red); }
+        const ls = lines(lit || fk), ty = by + gridH + 4 * s;
+        text(ls[0], px + mp, ty, lit || fk ? COLR.tx : COLR.dim); text(ls[1], px + mp, ty + LH + s, COLR.dim); if (ls[2]) text(ls[2], px + mp, ty + LH * 2 + s, COLR.dim); if (ls[3]) text(ls[3], px + mp, ty + LH * 3 + 2 * s, COLR.ok);
+        if (tch && m.sel) { const can = G.gold >= TOWER[m.sel].cost[0]; text(can ? '再点一次建造' : '金币不足', px + mp, ty + LH * 4 + 3 * s, can ? COLR.amber : COLR.red); }
       } else {
         const t = m.tower, d = t.def, maxed = t.lvl >= 2, upc = maxed ? 0 : d.cost[t.lvl + 1], can = !maxed && G.gold >= upc && t.state === 'active', refund = Math.round(t.spent * .6), L1 = t.lvl + 1;
         const ul = maxed ? '已满级' : '升级 ' + upc, sl = m.sellArm ? '确认 +' + refund : '出售 +' + refund, iw9 = 9 * s, bw3 = Math.max(tw(ul), tw(sl), tw('确认 +' + refund)) + iw9 + 11 * s, bh = (tch ? 24 : 15) * s, by0 = Math.round((bh - LH) / 2);
-        const st = t.kind === 'guard' ? d.n[t.lvl] + ' 名步兵 · ' + d.hp[t.lvl] + ' 生命' : '射程 ' + d.range[t.lvl].toFixed(1) + ' · 伤害 ' + d.dmg[t.lvl];
-        const nx = maxed ? t.kills + ' 次击杀' : (t.kind === 'guard' ? '下一级：' + d.n[L1] + ' 名步兵 · ' + d.hp[L1] + ' 生命' : '下一级：射程 ' + d.range[L1].toFixed(1) + ' · 伤害 ' + d.dmg[L1]);
+        const st = towerStat(t.kind, t.lvl) + (t.buff > 0 ? ' · 祭坛加持' : '');
+        const nx = maxed ? t.kills + ' 次击杀 · 总伤害 ' + Math.round(t.dealt) : '下一级：' + towerStat(t.kind, L1);
         const wP = Math.max(bw3 * 2 + 3 * s, tw(d.name) + 26 * s, tw(st), tw(nx)) + mp * 2, hP = mp * 2 + LH * 3 + 6 * s + bh, [px, py] = place(wP, hP);
         U.menuRect = { x: px, y: py, w: wP, h: hP };
         plate(px, py, wP, hP); text(d.name, px + mp, py + mp - s, COLR.amber);
@@ -5463,12 +5808,15 @@ const AU = (function () {
 
 
 const CAM = { yaw: PI / 4, elev: 38 * PI / 180, dist: 90, x: 0, y: 0, z: 0, zoom: 1, fx: 0, fz: 0, sx: 0, sz: 0, man: false, mx: 0, mz: 0, mzoom: 1, base: 27, aspect: 1.6, za: null };
+// 最远视距（缩放下限）。1 = 默认视距，0.8 = 最多比默认多看 25% 的范围。
+const CAM_ZMIN = .8;
 const _cr = new THREE.Vector3(), _cu = new THREE.Vector3(), _cd = new THREE.Vector3(), _ct = new THREE.Vector3();
 function applyCamera() {
   const cam = R.cam, e = CAM.elev, sy = Math.sin(CAM.yaw), cy = Math.cos(CAM.yaw);
   _cd.set(Math.cos(e) * sy, Math.sin(e), Math.cos(e) * cy); _cr.set(cy, 0, -sy); _cu.set(-Math.sin(e) * sy, Math.cos(e), -Math.sin(e) * cy);
   const aspect = R.dw / R.dh, base = Math.max(R.viewH, lerp(R.fitTall, R.fitW, smooth(.62, 1.15, aspect)) / aspect), vh = base / CAM.zoom;
   CAM.base = base; CAM.aspect = aspect;
+  { const zf = Math.ceil(16 / clamp(CAM.zoom, CAM_ZMIN, 1) - .01) / 16; if (zf !== R.zres) { R.zres = zf; resizeTargets(); } }
   R.px = vh / R.ih; R.viewW = vh * aspect; R.dofScale = base / R.viewH / CAM.zoom;
   _ct.set(CAM.x, CAM.y, CAM.z).addScaledVector(_cr, FX.shakeX).addScaledVector(_cu, FX.shakeY - R.shiftY + (R.hudTop || 0) / R.dh * vh * .5);
   const u = _ct.dot(_cr), v = _ct.dot(_cu), us = Math.round(u / R.px) * R.px, vs = Math.round(v / R.px) * R.px;
@@ -5501,7 +5849,7 @@ function updateCamera(dt) {
   if (CAM.man) { CAM.x = CAM.sx = CAM.mx; CAM.z = CAM.sz = CAM.mz; CAM.zoom = CAM.mzoom; }
   else {
     CAM.x = CAM.sx; CAM.z = CAM.sz;
-    const zt = away ? .62 : (G.phase === 'defeat' ? .92 : (boss ? 1.14 : 1));
+    const zt = away ? CAM_ZMIN : (G.phase === 'defeat' ? .92 : (boss ? 1.14 : 1));
     CAM.zoom = damp(CAM.zoom, zt, zt < CAM.zoom ? 1.1 : .7, dt);
   }
   CAM.y = damp(CAM.y, away ? -2.2 : .4, 1, dt);
@@ -5509,7 +5857,7 @@ function updateCamera(dt) {
 }
 
 function camGrab() { if (!CAM.man) { CAM.man = true; CAM.mx = CAM.x; CAM.mz = CAM.z; CAM.mzoom = CAM.zoom; } }
-function camZoomMin() { return Math.min(1, CAM.base * CAM.aspect / 56, CAM.base / 46); }
+function camZoomMin() { return Math.max(CAM_ZMIN, Math.min(1, CAM.base * CAM.aspect / 56, CAM.base / 46)); }
 function camPan(dx, dy) {
   if (G.phase === 'crumble' || G.phase === 'rise' || G.phase === 'clear') return;
   camGrab(); const upp = CAM.base * CAM.aspect / CAM.mzoom / R.dw, se = Math.sin(CAM.elev), sy = Math.sin(CAM.yaw), cy = Math.cos(CAM.yaw), du = dx * upp, dv = -dy * upp;
@@ -5535,7 +5883,7 @@ function sfx(name, x, z, gain = 1, p = 0) {
 const _mm = new THREE.Matrix4(), _mq = new THREE.Quaternion(), _mv = new THREE.Vector3(), _ms = new THREE.Vector3(1, 1, 1), _torch = [];
 function step(rdt) {
   G.slowmo = Math.max(0, G.slowmo - rdt);
-  const dt = rdt * (G.slowmo > 0 ? lerp(1, .32, sat(G.slowmo / .35)) : 1);
+  const dt = rdt * (G.slowmo > 0 ? lerp(1, .32, sat(G.slowmo / .35)) : 1) * (UI.menu && G.phase === 'play' ? .3 : 1);
   G.t += dt; SH.uTime.value = G.t;
   const B = G.B;
   beginParts(); G.hbars.length = 0;
@@ -5543,7 +5891,7 @@ function step(rdt) {
   const live = G.phase === 'play' || G.phase === 'defeat' || G.phase === 'clear';
   if (live) {
     updateWaves(dt); aiThink(dt);
-    for (const t of G.towers) if (t.alive) t.update(dt);
+    applyShrines(); for (const t of G.towers) if (t.alive) t.update(dt);
     updateUnits(dt);
     for (let i = G.mons.length - 1; i >= 0; i--) if (G.mons[i].dead) swapRemove(G.mons, i);
     updateProjectiles(dt);
@@ -5578,6 +5926,7 @@ function step(rdt) {
   for (const m of G.mons) if ((m.torch || m.glowL) && !m.dead && m.vis) _torch.push(m);
   for (const f of G.men) if (f.torch && !f.dead) _torch.push(f);
   for (const a of G.arrows) _torch.push(a);
+  for (const o of G.orbs) _torch.push(o);
   updateTorchLights(dt, _torch, CAM.x, CAM.z);
   collectMistLights();
   endParts(); endFX();
@@ -5600,7 +5949,8 @@ function frame(now) {
     R.fpsText = (1000 / ms).toFixed(0) + ' fps  ' + R.iw + 'x' + R.ih + '  calls ' + R.renderer.info.render.calls + '  mons ' + G.mons.length;
     if (ms > 22.5) { _slow++; _fast = 0; } else { _slow = 0; _fast = ms < 18.6 ? _fast + 1 : 0; }
     _hold -= _acc;
-    if (!HASH.noscale) {
+    // 自动降分辨率默认关闭：画质保持恒定，不因帧率波动或视距变化而变糊。需要时用 #autoscale=1 开启。
+    if (HASH.autoscale && !HASH.noscale) {
       if (_slow >= 3 && R.quality <= .55 && !R.lite) { R.lite = 1; _slow = 0; LT.moon.shadow.mapSize.set(1024, 1024); if (LT.moon.shadow.map) { LT.moon.shadow.map.dispose(); LT.moon.shadow.map = null; } }
       if (_slow >= 2 && R.quality > .55) { R.quality = Math.max(.55, R.quality - .15); resizeRenderer(); _slow = 0; _hold = _back; _back = Math.min(480, _back * 2); }
       else if (_fast >= 3 && R.quality < 1 && _hold <= 0) { R.quality = Math.min(1, R.quality + .15); resizeRenderer(); _fast = 0; }

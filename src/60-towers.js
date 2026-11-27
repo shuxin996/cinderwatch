@@ -1,7 +1,7 @@
 
 const G = {
   B: null, t: 0, gold: 0, lives: 20, maxLives: 20, wave: 0, slain: 0, level: 0, run: 1,
-  towers: [], mons: [], men: [], arrows: [], shells: [], stuck: [], hbars: [], phase: 'play',
+  towers: [], mons: [], men: [], arrows: [], shells: [], stuck: [], hbars: [], orbs: [], zones: [], phase: 'play',
 };
 const TOWER = {
   archer: { name: '弓箭塔', short: '弓箭', icon: 'archer', cost: [70, 90, 140], range: [6.2, 6.8, 7.4], dmg: [9, 11, 14], rate: [.85, .78, .7], n: [1, 2, 3], air: true, ground: true, light: [80, 105, 140], desc: ['发射快速燃烧的箭矢。', '可以命中飞行单位。'] },
@@ -9,7 +9,14 @@ const TOWER = {
   spire: { name: '雷暴尖塔', short: '尖塔', icon: 'spire', cost: [110, 120, 180], range: [5.5, 6.0, 6.5], dmg: [17, 25, 35], jumps: [3, 4, 6], rate: [2.3, 2.1, 1.9], slow: [.36, .42, .48], slowT: [1.3, 1.5, 1.7], air: true, ground: true, light: [16, 20, 26], desc: ['连锁闪电，可减速。', '可以命中飞行单位。'] },
   guard: { name: '守卫哨所', short: '守卫', icon: 'guard', cost: [80, 90, 150], range: [3.4, 3.7, 4.0], n: [2, 3, 3], hp: [62, 90, 135], dmg: [7, 10, 15], rate: [7, 6, 5], air: false, ground: true, light: [55, 70, 90], desc: ['阻挡敌人的步兵，', '在路上与敌人对决。'] },
 };
-const TOWER_KINDS = ['archer', 'bombard', 'spire', 'guard'];
+Object.assign(TOWER, {
+  mage: { name: '奥术法师塔', short: '法师', icon: 'mage', cost: [100, 120, 180], range: [6.0, 6.6, 7.2], dmg: [16, 24, 36], rate: [1.25, 1.1, .95], burn: [0, 6, 11], air: true, ground: true, light: [30, 38, 48], lcol: [.75, .45, 1], desc: ['追踪奥术弹，无视护甲，', '二级起附带灼烧。'], vs: '克制：骑士 魔像 石像鬼' },
+  frost: { name: '寒霜方尖碑', short: '寒霜', icon: 'frost', cost: [90, 110, 160], range: [5.6, 6.0, 6.5], dmg: [5, 8, 12], rate: [3.2, 2.9, 2.6], zoneR: [1.5, 1.75, 2.0], zoneT: [3.5, 4.2, 5.0], slow: [.4, .48, .55], freeze: [.9, 1.1, 1.4], air: false, ground: true, light: [20, 26, 32], lcol: [.5, .85, 1], desc: ['在路面留下冰霜区减速，', '停留太久会被冻住。'], vs: '克制：快怪 火元素' },
+  crypt: { name: '亡灵墓穴', short: '墓穴', icon: 'crypt', cost: [110, 120, 170], range: [5.0, 5.6, 6.2], chance: [.35, .45, .6], cap: [3, 4, 6], n: [3, 3, 3], hp: [50, 75, 110], dmg: [8, 11, 16], rate: [1, 1, 1], air: false, ground: true, light: [22, 28, 36], lcol: [.4, 1, .5], desc: ['附近倒下的人形敌人', '可能复活为你作战。'], vs: '克制：成群的骷髅' },
+  shrine: { name: '圣火祭坛', short: '祭坛', icon: 'shrine', cost: [120, 130, 180], range: [4.6, 5.2, 5.8], haste: [.18, .28, .4], rangeUp: [.06, .1, .14], heal: [0, 5, 9], dmg: [0, 0, 0], rate: [1, 1, 1], air: false, ground: false, light: [60, 75, 95], desc: ['不攻击。加快附近塔的', '攻速和射程，幽灵现形。'], vs: '辅助：放在塔群中间' },
+});
+TOWER.archer.vs = '克制：飞行单位'; TOWER.bombard.vs = '克制：成群的地面怪'; TOWER.spire.vs = '克制：飞行 群怪 冰冻目标'; TOWER.guard.vs = '克制：拦截地面怪';
+const TOWER_KINDS = ['archer', 'bombard', 'spire', 'guard', 'mage', 'frost', 'crypt', 'shrine'];
 
 function blueprint(kind, lvl) {
   const pieces = [], mounts = {};
@@ -106,6 +113,54 @@ function blueprint(kind, lvl) {
     if (lvl >= 1) piece('bands', 2, S => { for (const u of lvl === 2 ? [.3, .58, .82] : [.4, .75]) S.cyl(lerp(.62, .32, u) + .03, .09, 0, .42 + u * (H - .42), 0, cu, { n: 4, l: L_METAL, r: [0, PI / 4, 0], rough: .45 }); });
     piece('claws', 3, S => { for (let k = 0; k < 4; k++) { const a = k * HPI + PI / 4, cs = Math.cos(a), sn = Math.sin(a); S.seg([cs * .22, H - .12, sn * .22], [cs * .46, H + .26, sn * .46], .06, .045, basL, { l: L_ROCK, n: 4 }); S.seg([cs * .46, H + .26, sn * .46], [cs * .26, H + .74, sn * .26], .045, .012, lvl ? cu : basL, { l: lvl ? L_METAL : L_ROCK, n: 4 }); } S.cyl(.34, .12, 0, H - .02, 0, basL, { n: 4, l: L_ROCK, r: [0, PI / 4, 0] }); });
     mounts.crystal = [0, H + .42, 0]; mounts.crystalS = [.2, .24, .29][lvl]; mounts.shards = [0, 2, 4][lvl]; mounts.rings = lvl === 2; mounts.top = H + 1.2; mounts.flame = null; mounts.lightAt = [0, H + .45, 0];
+  } else if (kind === 'mage') {
+    const H = [2.3, 2.9, 3.5][lvl], Rr = [.6, .66, .72][lvl], vio = C(0x4e3878), rune = C(0xc49cff), br = COL.brass;
+    piece('plinth', 0, S => { S.cyl(Rr + .42, .24, 0, .12, 0, sdk, { n: 8, l: L_MASON }); S.cyl(Rr + .26, .18, 0, .33, 0, st, { n: 8, l: L_MASON }); if (lvl >= 1) for (const [a, b] of corners) S.box(.26, .3, .26, a * (Rr + .3), .39, b * (Rr + .3), sl, { l: L_MASON }); });
+    piece('tower', 1, S => {
+      S.cyl(Rr, H - .42, 0, .42 + (H - .42) / 2, 0, st, { n: 8, l: L_MASON, rt: .86, jit: .02 });
+      S.cyl(Rr * .93 + .04, .1, 0, .42 + (H - .42) * .5, 0, br, { n: 8, l: L_METAL });
+      for (let k = 0; k < 4; k++) { const a = k * HPI + PI / 8, r2 = lerp(Rr, Rr * .86, .3) + .01; S.box(.1, .26, .03, Math.sin(a) * r2, .42 + (H - .42) * .3, Math.cos(a) * r2, rune, { emis: .6, jit: 0, r: [0, a, 0] }); }
+      S.box(.3, .5, .06, 0, .64, Rr * .98, COL.black, { jit: 0 });
+      if (lvl >= 1) for (let k = 0; k < 2; k++) { const a = k * PI + HPI, r2 = lerp(Rr, Rr * .86, .72) + .02; S.box(.28, .62, .03, Math.sin(a) * r2, .42 + (H - .42) * .7, Math.cos(a) * r2, vio, { l: L_CLOTH, r: [0, a, 0] }); S.box(.12, .12, .035, Math.sin(a) * (r2 + .01), .42 + (H - .42) * .72, Math.cos(a) * (r2 + .01), COL.gold, { l: L_METAL, r: [0, a, 0] }); }
+    });
+    piece('crown', 2, S => {
+      S.cyl(Rr * .86 + .14, .12, 0, H + .02, 0, sl, { n: 8, l: L_MASON });
+      for (let k = 0; k < 8; k++) { const a = k * TAU / 8; S.box(.16, .2, .14, Math.cos(a) * (Rr * .86 + .08), H + .18, Math.sin(a) * (Rr * .86 + .08), sl, { l: L_MASON, r: [0, -a + HPI, 0] }); }
+      for (let k = 0; k < 4; k++) { const a = k * HPI + PI / 4, cs = Math.cos(a), sn = Math.sin(a); S.seg([cs * .3, H + .05, sn * .3], [cs * .42, H + .5, sn * .42], .045, .035, br, { l: L_METAL, n: 4 }); S.seg([cs * .42, H + .5, sn * .42], [cs * .2, H + .9, sn * .2], .035, .012, br, { l: L_METAL, n: 4 }); }
+    });
+    mounts.crystal = [0, H + .72, 0]; mounts.crystalS = [.16, .19, .23][lvl]; mounts.shards = [1, 3, 5][lvl]; mounts.rings = lvl === 2; mounts.top = H + 1.3; mounts.flame = null; mounts.lightAt = [0, H + .72, 0];
+  } else if (kind === 'frost') {
+    const H = [2.5, 3.2, 3.9][lvl], ice = C(0xa8dcff), stB = C(0x667186), stBL = C(0x8590a6), ch = .5 + lvl * .15;
+    piece('plinth', 0, S => { S.box(1.5, .22, 1.5, 0, .11, 0, sdk, { l: L_MASON }); S.box(1.12, .2, 1.12, 0, .32, 0, stBL, { l: L_ROCK }); for (const [a, b] of corners) S.cone(.12, ch, a * .6, .42 + ch / 2, b * .6, ice, { n: 4, emis: .35, jit: 0 }); });
+    piece('obelisk', 1, S => {
+      S.cyl(.42, H - .42, 0, .42 + (H - .42) / 2, 0, stB, { n: 4, l: L_ROCK, rt: .55, r: [0, PI / 4, 0], jit: .02 });
+      for (let k = 0; k < 4; k++) { const a = k * HPI, n = 2 + lvl; for (let j = 0; j < n; j++) { const u = (j + .6) / (n + .4), y = .42 + u * (H - .42), r2 = lerp(.42, .23, u) * .7072 + .012; S.box(.06, .16, .02, Math.sin(a) * r2, y, Math.cos(a) * r2, ice, { emis: .55, jit: 0, r: [-.1, a, 0], ro: 'YXZ' }); } }
+      if (lvl >= 1) for (const u of lvl === 2 ? [.35, .7] : [.5]) S.cyl(lerp(.42, .23, u) + .03, .08, 0, .42 + u * (H - .42), 0, COL.ironL, { n: 4, l: L_METAL, r: [0, PI / 4, 0] });
+    });
+    piece('cap', 2, S => { S.cone(.24, .45, 0, H + .2, 0, stBL, { n: 4, l: L_ROCK, r: [0, PI / 4, 0] }); for (let k = 0; k < 3 + lvl; k++) { const a = k * TAU / (3 + lvl), cs = Math.cos(a), sn = Math.sin(a); S.seg([cs * .2, H - .1, sn * .2], [cs * .42, H + .35, sn * .42], .05, .01, ice, { emis: .4, n: 4 }); } });
+    mounts.crystal = [0, H + .95, 0]; mounts.crystalS = [.16, .19, .23][lvl]; mounts.shards = [2, 3, 5][lvl]; mounts.rings = false; mounts.top = H + 1.4; mounts.flame = null; mounts.lightAt = [0, H + .9, 0];
+  } else if (kind === 'crypt') {
+    const W = [1.4, 1.6, 1.8][lvl], D = [1.2, 1.35, 1.5][lvl], wh = [.95, 1.15, 1.4][lvl], moss = C(0x535f52), grn = C(0x7dff9a), bone = C(0xe0d6bd), rh = .5 + lvl * .15, y1 = .18 + wh;
+    piece('floor', 0, S => { S.box(W + .55, .18, D + .6, 0, .09, .05, sdk, { l: L_MASON }); S.box(.8, .1, .35, 0, .05, D / 2 + .5, st, { l: L_MASON }); });
+    piece('walls', 1, S => {
+      S.box(W, wh, D, 0, .18 + wh / 2, 0, moss, { l: L_MASON, jit: .03 });
+      for (const sg of [-1, 1]) for (const zz of [-1, 1]) S.box(.16, wh + .12, .16, sg * W / 2, .18 + (wh + .12) / 2, zz * D / 2, sl, { l: L_MASON });
+      S.box(.52, .78, .08, 0, .18 + .39, D / 2, COL.black, { jit: 0 }); S.box(.34, .6, .02, 0, .18 + .32, D / 2 + .05, grn, { emis: .45, jit: 0 });
+      S.box(.74, .14, .16, 0, .18 + .84, D / 2 + .03, sl, { l: L_MASON });
+      S.box(.18, .18, .04, 0, .18 + .84, D / 2 + .12, bone, { l: L_PLAIN });
+    });
+    piece('roof', 2, S => { S.box(W + .22, .14, D + .22, 0, y1 + .07, 0, sl, { l: L_MASON }); S.cyl(W * .42, rh, 0, y1 + .14 + rh / 2, 0, moss, { n: 6, l: L_MASON, rt: .55 }); S.box(.2, .2, .2, 0, y1 + .14 + rh + .1, 0, sl, { l: L_MASON }); S.sph(.15, 0, y1 + .14 + rh + .32, 0, bone, { l: L_PLAIN, w: 6, h: 4, smooth: false }); });
+    piece('graves', 3, S => { const gs = [[-W / 2 - .38, .55], [W / 2 + .38, .2], [-W / 2 - .34, -.45], [W / 2 + .36, -.5]]; for (let i = 0; i < 2 + lvl; i++) { const [x, z] = gs[i]; S.box(.3, .44, .09, x, .22, z, i & 1 ? sl : st, { l: L_MASON, r: [rng() * .2 - .1, rng() * .5 - .25 + HPI, rng() * .16 - .08] }); } });
+    if (lvl >= 1) piece('braziers', 4, S => { for (const sg of [-1, 1]) { S.cyl(.12, .6, sg * (W / 2 + .14), .3, D / 2 + .38, sdk, { n: 6, l: L_MASON }); S.cyl(.17, .08, sg * (W / 2 + .14), .64, D / 2 + .38, grn, { n: 6, emis: .7, jit: 0 }); } });
+    mounts.flame = null; mounts.lightAt = [0, y1 + rh + .5, 0]; mounts.top = y1 + rh + .7; mounts.door = [0, 0, D / 2 + .45];
+    mounts.green = lvl >= 1 ? [[-(W / 2 + .14), .78, D / 2 + .38], [W / 2 + .14, .78, D / 2 + .38]] : [];
+  } else if (kind === 'shrine') {
+    const Rr = [1.0, 1.1, 1.2][lvl], ph = [1.3, 1.6, 1.9][lvl], np = lvl ? 6 : 4, bs = .55 + lvl * .1, ay = .36;
+    piece('base', 0, S => { S.cyl(Rr + .28, .2, 0, .1, 0, sdk, { n: 10, l: L_MASON }); S.cyl(Rr + .05, .16, 0, .28, 0, sl, { n: 10, l: L_MASON }); S.box(.7, .1, .4, 0, .05, Rr + .38, st, { l: L_MASON }); });
+    piece('pillars', 1, S => { for (let k = 0; k < np; k++) { const a = k * TAU / np + PI / np, x = Math.cos(a) * Rr * .8, z = Math.sin(a) * Rr * .8; S.box(.24, .12, .24, x, ay + .06, z, sl, { l: L_MASON }); S.cyl(.1, ph, x, ay + .12 + ph / 2, z, st, { n: 6, l: L_MASON }); S.cyl(.12, .06, x, ay + .12 + ph * .78, z, COL.gold, { n: 6, l: L_METAL }); S.box(.26, .12, .26, x, ay + .18 + ph, z, sl, { l: L_MASON }); if (lvl === 2) S.cone(.08, .3, x, ay + .39 + ph, z, COL.gold, { n: 4, l: L_METAL }); } });
+    if (lvl >= 1) piece('ring', 2, S => { const n = 12, y = ay + .3 + ph; for (let k = 0; k < n; k++) { const a = k / n * TAU; S.box(.52 * Rr, .08, .1, Math.cos(a) * Rr * .8, y, Math.sin(a) * Rr * .8, COL.brass, { l: L_METAL, r: [0, -a + HPI, 0] }); } });
+    piece('altar', 3, S => { S.box(.6, .5, .6, 0, ay + .25, 0, sl, { l: L_MASON }); S.box(.74, .08, .74, 0, ay + .54, 0, COL.gold, { l: L_METAL }); S.box(.5, .12, .5, 0, ay + .64, 0, st, { l: L_MASON }); brazier(S, 0, ay + .7, 0, bs); });
+    mounts.flame = [0, ay + .7 + bs * .7, 0]; mounts.flameSize = bs; mounts.top = ay + ph + .8;
   } else {
     const W = [1.5, 1.7, 1.9][lvl], D = [1.3, 1.4, 1.5][lvl], wh = [1.05, 1.25, 1.5][lvl], stoneWalls = lvl === 2;
     piece('floor', 0, S => { S.box(W + .5, .16, D + .7, 0, .08, .1, sdk, { l: L_MASON }); S.box(.7, .1, .4, 0, .05, D / 2 + .55, st, { l: L_MASON }); });
@@ -169,12 +224,12 @@ class Tower {
     this.spent = this.def.cost[0]; this.state = 'build'; this.bt = 0; this.cool = rr(.2, .8); this.kills = 0; this.dealt = 0; this.alive = true; this.recent = 0;
     this.group = new THREE.Group(); this.group.position.set(this.x, this.y, this.z); this.group.rotation.y = this.yaw; R.scene.add(this.group);
     this.pieces = []; this.staticMesh = null; this.scaf = null; this.flame = null; this.flame2 = null; this.archers = []; this.men = []; this.respawn = 0;
-    this.em = { x: this.x, y: this.y + 3, z: this.z, r: 1, g: .56, b: .26, I: 0, range: 13, on: 0, alive: true, seed: rnd() * 50, spot: kind !== 'spire', dx: this.sn, dz: this.cs, fl: 1, _spot: 0 };
+    this.em = { x: this.x, y: this.y + 3, z: this.z, r: 1, g: .56, b: .26, I: 0, range: 13, on: 0, alive: true, seed: rnd() * 50, spot: !['spire', 'mage', 'frost', 'crypt'].includes(kind), dx: this.sn, dz: this.cs, fl: 1, _spot: 0 };
     LT.emitters[idx] = this.em; pad.tower = this;
     this.gunYaw = 0; this.recoil = 0; this.charge = 0; this.spin = rnd() * 6; this.hover = 0; this.appear = 0;
     this.begin();
   }
-  get range() { return this.def.range[this.lvl]; }
+  get range() { return this.def.range[this.lvl] * (1 + (this.rbuff || 0)); }
   w(l, out) { out.x = this.x + l[0] * this.cs + l[2] * this.sn; out.y = this.y + l[1]; out.z = this.z - l[0] * this.sn + l[2] * this.cs; return out; }
   begin() {
     const bp = blueprint(this.kind, this.lvl); this.bp = bp; this.mounts = bp.mounts; this.bt = 0; this.state = this.lvl ? 'upgrade' : 'build';
@@ -204,11 +259,11 @@ class Tower {
     const mt = this.mounts, lvl = this.lvl, d = this.def;
     if (mt.flame) { const p = this.w(mt.flame, {}); this.flame = addFlame({ x: p.x, y: p.y, z: p.z, size: mt.flameSize, on: 0, layers: mt.flameSize > .7 ? 2 : 1, glow: 1 }); this.em.x = p.x; this.em.y = p.y + .25; this.em.z = p.z; this.em.r = 1; this.em.g = .56; this.em.b = .26; }
     if (mt.flame2) { const p = this.w(mt.flame2, {}); this.flame2 = addFlame({ x: p.x, y: p.y, z: p.z, size: mt.flameSize, on: 0 }); }
-    if (mt.lightAt) { const p = this.w(mt.lightAt, {}); this.em.x = p.x; this.em.y = p.y; this.em.z = p.z; this.em.r = .45; this.em.g = .72; this.em.b = 1; }
+    if (mt.lightAt) { const p = this.w(mt.lightAt, {}); this.em.x = p.x; this.em.y = p.y; this.em.z = p.z; const lc = d.lcol || [.45, .72, 1]; this.em.r = lc[0]; this.em.g = lc[1]; this.em.b = lc[2]; }
     this.em.I = d.light[lvl]; this.em.range = this.kind === 'archer' ? 12 : 10.5;
     if (this.kind === 'archer') mt.archers.forEach((a, i) => this.archers.push({ l: a, yaw: this.yaw, draw: 0, cool: .4 + i * .3, e: { scale: .82, ph: 0, mv: 0, atk: -1, bow: true, draw: 0, pitch: 0, tint: [1, .9, .7], x: 0, y: 0, z: 0, yaw: 0, flash: 0 } }));
     if (this.kind === 'bombard') this.makeGun();
-    if (this.kind === 'spire') this.makeCrystal();
+    if (mt.crystal) this.makeCrystal();
     if (this.kind === 'guard') { this.respawn = .2; }
     this.state = 'active'; this.appear = 0;
     fxDust(this.x, this.y + .2, this.z, 10, 1.3, { speed: 2.2 });
@@ -265,18 +320,22 @@ class Tower {
     if (TOWER_STUN) { this.stun -= dt; const k = Math.min(1, this.stun * 2); FX.add.push(this.x, this.y + 1.7, this.z, 4.2, 5.6, 0, 0, .2, .5, 1.2, .3 * k, 2, 0, 0, 0); if (rnd() < dt * 5) { const a = rnd() * TAU, h = rr(.6, 3); fxBolt([this.x + Math.cos(a) * .8, this.y + h, this.z + Math.sin(a) * .8], [this.x + Math.cos(a + 1.2) * .8, this.y + h + rr(-.5, .5), this.z + Math.sin(a + 1.2) * .8], .12, [.5, .85, 1.5], .03); } if (rnd() < dt * 18) fxPart(this.x + rr(-.7, .7), this.y + rr(.4, 3.2), this.z + rr(-.7, .7), 0, rr(-.5, .1), 0, rr(.4, .9), rr(.05, .08), .6, 1.1, 2.0, { drag: .5 }); }
     this.em.on = damp(this.em.on, TOWER_STUN ? .12 : 1, TOWER_STUN ? 8 : 3, dt);
     if (this.flame) this.flame.on = this.em.on; if (this.flame2) this.flame2.on = this.em.on;
-    this.cool -= dt;
+    this.cool -= dt * (1 + (this.buff || 0));
     if (this.kind === 'archer') this.updArcher(dt, d, lvl);
     else if (this.kind === 'bombard') this.updBombard(dt, d, lvl);
     else if (this.kind === 'spire') this.updSpire(dt, d, lvl);
+    else if (this.kind === 'mage') this.updMage(dt, d, lvl);
+    else if (this.kind === 'frost') this.updFrost(dt, d, lvl);
+    else if (this.kind === 'crypt') this.updCrypt(dt, d, lvl);
+    else if (this.kind === 'shrine') this.updShrine(dt, d, lvl);
     else this.updGuard(dt, d, lvl);
     TOWER_STUN = false;
   }
   updArcher(dt, d, lvl) {
-    const tgt = findTarget(this.x, this.z, d.range[lvl], true, true);
+    const tgt = findTarget(this.x, this.z, this.range, true, true);
     for (const a of this.archers) {
       const p = this.w(a.l, _ap), e = a.e; e.x = p.x; e.y = p.y - (1 - easeOut(this.appear)) * .5; e.z = p.z; e.scale = .82 * (.3 + .7 * this.appear);
-      a.cool -= dt;
+      a.cool -= dt * (1 + (this.buff || 0));
       if (tgt) {
         const T = clamp(Math.hypot(tgt.x - p.x, tgt.z - p.z) / 14, .22, .62), q = aimPoint(tgt, T, _ap2);
         a.yaw = angDamp(a.yaw, Math.atan2(q.x - p.x, q.z - p.z), 12, dt);
@@ -293,7 +352,7 @@ class Tower {
     }
   }
   updBombard(dt, d, lvl) {
-    const tgt = findTarget(this.x, this.z, d.range[lvl], false, true, d.minRange);
+    const tgt = findTarget(this.x, this.z, this.range, false, true, d.minRange);
     this.recoil = Math.max(0, this.recoil - dt * 1.6);
     let aligned = false;
     if (tgt) {
@@ -317,9 +376,9 @@ class Tower {
     if (this.cool > 0 && this.cool < 1.2 && rnd() < dt * 5) { this.carriage.updateMatrixWorld(true); const mz = _tv.set(0, 0, this.mounts.gunLen - .2).applyMatrix4(this.barrel.matrixWorld); fxSmoke(mz.x, mz.y, mz.z, rr(-.1, .1), rr(.3, .6), rr(-.1, .1), 1.2, .18, .35, .3, .3, .3, .22, { drag: 1 }); }
   }
   updSpire(dt, d, lvl) {
-    const tgt = findTarget(this.x, this.z, d.range[lvl], true, true);
+    const tgt = findTarget(this.x, this.z, this.range, true, true);
     const was = this.charge;
-    this.charge = tgt ? Math.min(1, this.charge + dt / d.rate[lvl]) : Math.max(0, this.charge - dt * .25);
+    this.charge = tgt ? Math.min(1, this.charge + dt * (1 + (this.buff || 0)) / d.rate[lvl]) : Math.max(0, this.charge - dt * .25);
     if (was < .68 && this.charge >= .68 && tgt) sfx('charge', this.x, this.z, .5);
     const c = this.charge, pulse = .85 + .15 * Math.sin(G.t * (6 + c * 20));
     this.spin += dt * (.8 + c * 5); this.core.rotation.y = this.spin; this.core.position.y = Math.sin(G.t * 1.6 + this.idx) * .05;
@@ -332,7 +391,7 @@ class Tower {
     if (c > .5 && rnd() < dt * 14 * c) { const a = rnd() * TAU; fxBolt([cp.x, cp.y, cp.z], [cp.x + Math.cos(a) * .7, cp.y + rr(-.5, .5), cp.z + Math.sin(a) * .7], .1, [.45, .7, 1.4], .035); }
     if (c >= 1 && tgt) {
       this.charge = 0; let from = [cp.x, cp.y, cp.z], cur = tgt, dmg = d.dmg[lvl]; const hit = [];
-      for (let j = 0; j < d.jumps[lvl] && cur; j++) {
+      let jl = d.jumps[lvl]; for (let j = 0; j < jl && cur; j++) { if (cur.frozen > 0 && jl < d.jumps[lvl] + 2) jl++;
         hit.push(cur); const to = [cur.x, cur.y + cur.hitH, cur.z];
         fxBolt(from, to, .26 - j * .015, [.5, .78, 1.6], .1 - j * .008);
         fxSparks(to[0], to[1], to[2], 5, 3.5, 1.2, 2, 4, { grav: 3, size: .06 }); fxTimed(2, to[0], to[1], to[2], 1.6, 1.6, .5, .9, 2, .7, .16);
@@ -348,6 +407,56 @@ class Tower {
   updGuard(dt, d, lvl) {
     for (let i = this.men.length - 1; i >= 0; i--) if (this.men[i].gone) this.men.splice(i, 1);
     if (this.men.length < d.n[lvl]) { this.respawn -= dt; if (this.respawn <= 0) { this.respawn = this.men.length === 0 && G.t < 4 ? .5 : d.rate[lvl]; spawnFootman(this); } }
+  }
+  animOrb(dt, c, col) {
+    this.spin += dt * (.8 + c * 4); this.core.rotation.y = this.spin; this.core.position.y = Math.sin(G.t * 1.6 + this.idx) * .08;
+    this.shards.forEach((s, i) => { const a = this.spin * .7 + i * TAU / this.shards.length; s.position.set(Math.cos(a) * .55, Math.sin(a * 1.3) * .14 - .05, Math.sin(a) * .55); s.rotation.y = -a * 2; });
+    if (this.ringG) this.ringG.rotation.y = -this.spin * .25;
+    const k = (.9 + 3.2 * c * c) * this.appear; this.cmat.color.setRGB(col[0] * k, col[1] * k, col[2] * k);
+    const cp = this.w(this.mounts.crystal, _ap); FX.add.push(cp.x, cp.y, cp.z, 1.4 + c, 1.4 + c, 0, 0, col[0] * .45, col[1] * .45, col[2] * .45, .12 + .2 * c, 2, 0, 0, 0);
+    return cp;
+  }
+  updMage(dt, d, lvl) {
+    const tgt = findTarget(this.x, this.z, this.range, true, true);
+    if (!tgt) this.cool = Math.max(this.cool, .25);
+    const c = 1 - sat(this.cool / d.rate[lvl]), cp = this.animOrb(dt, c, [.78, .42, 1.3]);
+    this.em.I = d.light[lvl] * (.8 + .5 * c);
+    if (tgt && this.cool <= 0) {
+      this.cool = d.rate[lvl] * rr(.95, 1.05);
+      G.orbs.push({ x: cp.x, y: cp.y, z: cp.z, vx: rr(-1, 1), vy: 2.6, vz: rr(-1, 1), m: tgt, dmg: d.dmg[lvl], burn: d.burn[lvl], tower: this, life: 3.5, alive: true, lI: 20, lCol: 0xb070ff, lx: cp.x, ly: cp.y, lz: cp.z, lseed: rnd() * 9 });
+      lightFlash(cp.x, cp.y, cp.z, 0xc090ff, 220, .14, 10); sfx('zap', this.x, this.z, .45, .95);
+      for (let i = 0; i < 6; i++) fxPart(cp.x, cp.y, cp.z, rr(-1.2, 1.2), rr(-.4, 1.2), rr(-1.2, 1.2), rr(.3, .6), .05, 1.8, .9, 3, { drag: 2 });
+    }
+  }
+  updFrost(dt, d, lvl) {
+    const tgt = findTarget(this.x, this.z, this.range, false, true);
+    if (!tgt) this.cool = Math.max(this.cool, .3);
+    const c = 1 - sat(this.cool / d.rate[lvl]), cp = this.animOrb(dt, c, [.45, .85, 1.35]);
+    this.em.I = d.light[lvl] * (.8 + .5 * c);
+    if (tgt && this.cool <= 0) {
+      this.cool = d.rate[lvl] * rr(.95, 1.05);
+      const q = aimPoint(tgt, .55, _ap2), gy = G.B.heightAt(q.x, q.z), zr = d.zoneR[lvl], cx = cp.x, cy = cp.y, cz = cp.z;
+      G.zones.push({ x: q.x, y: gy, z: q.z, r: zr, t: 0, T: d.zoneT[lvl], tick: .2, tower: this, lvl });
+      fxBolt([cx, cy, cz], [q.x, gy + .3, q.z], .3, [.6, 1.0, 1.8], .09);
+      fxTimed(4, q.x, gy + .08, q.z, zr * 2.6, zr * 2.6, .6, 1.1, 1.9, .8, .45, { ground: true });
+      for (let i = 0; i < 12; i++) { const a = rnd() * TAU; fxPart(q.x, gy + .2, q.z, Math.cos(a) * rr(1, 3), rr(1, 3), Math.sin(a) * rr(1, 3), rr(.4, .8), rr(.05, .08), .9, 1.4, 2.3, { grav: 6, drag: .5 }); }
+      lightFlash(q.x, gy + .6, q.z, 0xa0e0ff, 320, .25, 10); sfx('zap', q.x, q.z, .55, .05);
+    }
+  }
+  updCrypt(dt, d, lvl) {
+    for (let i = this.men.length - 1; i >= 0; i--) if (this.men[i].gone) this.men.splice(i, 1);
+    const p = this.w(this.mounts.lightAt, _ap), pulse = .8 + .2 * Math.sin(G.t * 3 + this.idx);
+    FX.add.push(p.x, p.y, p.z, 1.6, 1.6, 0, 0, .3, 1.2, .45, .28 * pulse * this.appear, 2, 0, 0, 0);
+    if (rnd() < dt * 6) fxPart(p.x + rr(-.15, .15), p.y, p.z + rr(-.15, .15), rr(-.1, .1), rr(.4, .9), rr(-.1, .1), rr(.6, 1.1), rr(.05, .08), .5, 2.0, .7, { drag: .6, rise: .3 });
+    for (const g of this.mounts.green || []) { const q = this.w(g, _ap2); FX.add.push(q.x, q.y, q.z, .5, .7, 0, 0, .5, 2.2, .8, .8 * pulse, 0, 0, 0, 0); if (rnd() < dt * 4) fxPart(q.x, q.y, q.z, 0, rr(.5, 1), 0, rr(.3, .6), .05, .6, 2.2, .8, { drag: .5, rise: .5 }); }
+    this.em.I = d.light[lvl] * pulse;
+  }
+  updShrine(dt, d, lvl) {
+    const r = d.range[lvl], pulse = .7 + .3 * Math.sin(G.t * 2 + this.idx);
+    FX.add.push(this.x, this.y + .1, this.z, r * 2, r * 2, 0, 0, 1.6, 1.1, .4, .16 * pulse * this.appear, 4, 0, .52, 1);
+    if (rnd() < dt * 5) { const a = rnd() * TAU, q = rr(.4, 1) * r; fxPart(this.x + Math.cos(a) * q, this.y + .2, this.z + Math.sin(a) * q, 0, rr(.4, 1), 0, rr(.6, 1.2), .05, 2.4, 1.6, .5, { drag: .8, rise: .3 }); }
+    if (d.heal[lvl] > 0) for (const f of G.men) if (!f.dead && !f.raised && f.hp < f.maxHp && dist2(f.x, f.z, this.x, this.z) < r * r) f.hp = Math.min(f.maxHp, f.hp + d.heal[lvl] * dt);
+    for (const t of G.towers) if (t !== this && t.alive && t.buff > 0 && t.state === 'active' && rnd() < dt * .8 && dist2(t.x, t.z, this.x, this.z) < r * r) fxBolt([this.x, this.y + 1.4, this.z], [t.x, t.y + 1.5, t.z], .18, [1.6, 1.1, .4], .03);
   }
   dispose() { this.alive = false; this.em.alive = false; LT.emitters[this.idx] = null; this.clearModel(false); R.scene.remove(this.group); this.pad.tower = null; }
 }
@@ -384,6 +493,7 @@ function updateProjectiles(dt) {
       }
     }
   }
+  updateOrbs(dt); updateZones(dt);
   const St = G.stuck;
   for (let i = St.length - 1; i >= 0; i--) {
     const s = St[i]; s.life -= dt; if (s.life <= 0) { swapRemove(St, i); continue; }
@@ -412,4 +522,78 @@ function explodeAt(x, y, z, dmg, splash, tower) {
     hitMonster(m, dmg * k, 'blast', (m.x - x) / l, (m.z - z) / l, tower);
   }
   for (let i = 0; i < 5; i++) { _tm.compose(_tv.set(x + rr(-.3, .3), y + .2, z + rr(-.3, .3)), _tq.set(rr(-1, 1), rr(-1, 1), rr(-1, 1), 1).normalize(), _ts.set(.6, .6, .6)); addDebris(KIT.rubble, _tm, [.5, .45, .4], rr(-3, 3), rr(3, 6), rr(-3, 3), rr(4, 10), rr(1.6, 2.6)); }
+}
+
+function updateOrbs(dt) {
+  const O = G.orbs, sp = 10;
+  for (let i = O.length - 1; i >= 0; i--) {
+    const o = O[i], m = o.m; o.life -= dt;
+    if (!m || m.dead || m.hp <= 0 || o.life <= 0) { fxTimed(2, o.x, o.y, o.z, .8, .8, 1.2, .6, 2, .6, .15); o.alive = false; swapRemove(O, i); continue; }
+    const dx = m.x - o.x, dy = m.y + (m.fly ? 0 : m.hitH) - o.y, dz = m.z - o.z, l = Math.hypot(dx, dy, dz) || 1, k = 1 - Math.exp(-7 * dt);
+    o.vx += (dx / l * sp - o.vx) * k; o.vy += (dy / l * sp - o.vy) * k; o.vz += (dz / l * sp - o.vz) * k;
+    o.x += o.vx * dt; o.y += o.vy * dt; o.z += o.vz * dt; o.lx = o.x; o.ly = o.y; o.lz = o.z;
+    FX.add.push(o.x, o.y, o.z, .34, .34, 0, 0, 2.4, 1.3, 3.6, 1, 0, 0, 0, 0); FX.add.push(o.x, o.y, o.z, 1.2, 1.2, 0, 0, .7, .35, 1.2, .3, 2, 0, 0, 0);
+    if (rnd() < .7) fxPart(o.x, o.y, o.z, rr(-.3, .3), rr(-.3, .3), rr(-.3, .3), rr(.25, .5), .05, 1.8, .9, 3, { drag: 2 });
+    if (l < .5) {
+      o.alive = false; swapRemove(O, i);
+      fxSparks(o.x, o.y, o.z, 6, 3, 1.8, 1, 3, { size: .055, grav: 3 }); fxTimed(2, o.x, o.y, o.z, 1.4, 1.4, 1.4, .7, 2.4, .8, .16); sfx('arrowHit', o.x, o.z, .45, .2);
+      hitMonster(m, o.dmg, 'arcane', o.vx / sp, o.vz / sp, o.tower);
+      if (o.burn > 0 && !m.dead) applyBurn(m, o.burn, 3, o.tower);
+    }
+  }
+}
+function updateZones(dt) {
+  const Z = G.zones;
+  for (let i = Z.length - 1; i >= 0; i--) {
+    const z = Z[i]; z.t += dt; if (z.t >= z.T) { swapRemove(Z, i); continue; }
+    const a = Math.min(1, z.t * 4, (z.T - z.t) * 1.5), d = z.tower.def, l = z.lvl;
+    FX.add.push(z.x, z.y + .07, z.z, z.r * 2.2, z.r * 2.2, 0, 0, .35, .7, 1.3, .6 * a, 4, 0, .52, 1);
+    if (rnd() < dt * 12) { const an = rnd() * TAU, q = Math.sqrt(rnd()) * z.r; fxPart(z.x + Math.cos(an) * q, z.y + .1, z.z + Math.sin(an) * q, 0, rr(.3, .8), 0, rr(.5, 1), .05, .9, 1.4, 2.2, { drag: 1 }); }
+    z.tick -= dt; const tick = z.tick <= 0; if (tick) z.tick = .5;
+    for (const m of G.mons) {
+      if (m.dead || m.fly || m.hp <= 0 || !m.vis) continue;
+      const r2 = z.r + m.rad; if (dist2(m.x, m.z, z.x, z.z) > r2 * r2) continue;
+      slowMonster(m, d.slow[l], .45); m.chill = (m.chill || 0) + dt * 2;
+      if (m.chill >= 1.8 && !(m.frozen > 0)) { m.chill = 0; freezeMonster(m, d.freeze[l], z.tower); }
+      if (tick) hitMonster(m, d.dmg[l], 'frost', 0, 0, z.tower);
+    }
+  }
+}
+function applyBurn(m, dps, T, tower) {
+  if (m.dead || m.hp <= 0 || m.def.burnImm) return;
+  if (m.frozen > 0) { elementBurst(m, tower); return; }
+  m.burnD = Math.max(m.burnT > 0 ? m.burnD : 0, dps); m.burnT = Math.max(m.burnT || 0, T); m.burnBy = tower;
+}
+function freezeMonster(m, T, tower) {
+  if (m.dead || m.hp <= 0 || m.def.freezeImm) return;
+  if (m.def.boss) T *= .35;
+  if (m.burnT > 0) { elementBurst(m, tower); return; }
+  m.frozen = Math.max(m.frozen || 0, T * (m.def.fireEl ? 1.5 : 1));
+  fxTimed(2, m.x, m.y + (m.hitH || .4), m.z, 1.4, 1.4, .6, 1.1, 1.9, .8, .2); sfx('zap', m.x, m.z, .35, .05);
+}
+function elementBurst(m, tower) {
+  const y = m.y + (m.hitH || .4); m.frozen = 0; m.burnT = 0;
+  fxSparks(m.x, y, m.z, 12, 4.5, 1.6, 1.4, 2.2, { size: .06, grav: 5 }); fxSparks(m.x, y, m.z, 8, 3.5, 2.6, 1.0, .3, { size: .06, grav: 4 });
+  fxTimed(5, m.x, y, m.z, 2.4, 2.4, 1.6, 1.2, 1.8, .9, .25); lightFlash(m.x, y + .4, m.z, 0xd0e8ff, 380, .2, 12); sfx('explode', m.x, m.z, .55, .9);
+  hitMonster(m, 35 + m.maxHp * .1 * (m.def.boss ? .25 : 1), 'arcane', 0, 0, tower);
+}
+function applyShrines() {
+  for (const t of G.towers) { t.buff = 0; t.rbuff = 0; }
+  for (const s of G.towers) {
+    if (!s.alive || s.kind !== 'shrine' || s.state !== 'active' || s.stun > 0) continue;
+    const d = s.def, l = s.lvl, r2 = d.range[l] * d.range[l];
+    for (const t of G.towers) if (t !== s && t.alive && t.kind !== 'shrine' && dist2(t.x, t.z, s.x, s.z) < r2) { t.buff = Math.max(t.buff, d.haste[l]); t.rbuff = Math.max(t.rbuff, d.rangeUp[l]); }
+  }
+}
+function shrineNear(m) {
+  for (const t of G.towers) if (t.alive && t.kind === 'shrine' && t.state === 'active') { const r = t.def.range[t.lvl]; if (dist2(t.x, t.z, m.x, m.z) < r * r) return true; }
+  return false;
+}
+function towerStat(k, l) {
+  const d = TOWER[k];
+  if (k === 'guard') return d.n[l] + ' 名步兵 · ' + d.hp[l] + ' 生命';
+  if (k === 'crypt') return '复活率 ' + Math.round(d.chance[l] * 100) + '% · 上限 ' + d.cap[l];
+  if (k === 'shrine') return '攻速 +' + Math.round(d.haste[l] * 100) + '% · 射程 +' + Math.round(d.rangeUp[l] * 100) + '%';
+  if (k === 'frost') return '射程 ' + d.range[l].toFixed(1) + ' · 减速 ' + Math.round(d.slow[l] * 100) + '%';
+  return '射程 ' + d.range[l].toFixed(1) + ' · 伤害 ' + d.dmg[l];
 }
